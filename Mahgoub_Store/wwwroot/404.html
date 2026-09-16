@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>متجر محجوب</title>
+    <base href="/" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="icon" type="image/svg+xml" href="logo.svg" />
+    <link rel="apple-touch-icon" href="logo.svg" />
+    <link href="Mahgoub_Store.styles.css" rel="stylesheet" />
+    <link href="manifest.webmanifest" rel="manifest" />
+    <meta name="theme-color" content="#254055" />
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' 'wasm-unsafe-eval' 'unsafe-inline'; connect-src 'self' https: http://127.0.0.1:* http://localhost:* ws: wss:;" />
+</head>
+
+<body>
+    <div id="app">
+        <div class="boot-screen">
+            <img src="logo.svg" alt="أنظمة محجوب" />
+            <p>جاري التحميل…</p>
+        </div>
+    </div>
+    <div id="blazor-error-ui">
+        حدث خطأ غير متوقع.
+        <a href="." class="reload">إعادة التحميل</a>
+    </div>
+    <script src="_framework/blazor.webassembly.js"></script>
+    <script>
+        (function () {
+            function digitsOnly(e) {
+                var t = e.target;
+                if (!t || t.getAttribute("data-digits") !== "1") return;
+                if (e.ctrlKey || e.metaKey || e.altKey) return;
+                if (e.key === "Backspace" || e.key === "Delete" || e.key === "Tab" || e.key === "Enter"
+                    || e.key.indexOf("Arrow") === 0 || e.key === "Home" || e.key === "End") return;
+                if (e.key.length === 1 && (e.key < "0" || e.key > "9")) e.preventDefault();
+            }
+            document.addEventListener("keydown", digitsOnly, true);
+            document.addEventListener("paste", function (e) {
+                var t = e.target;
+                if (!t || t.getAttribute("data-digits") !== "1") return;
+                e.preventDefault();
+                var clip = (e.clipboardData && e.clipboardData.getData("text")) || "";
+                var extra = clip.replace(/\D/g, "");
+                var cur = String(t.value || "").replace(/\D/g, "");
+                var next = (cur + extra).slice(0, 10);
+                t.value = next;
+                t.dispatchEvent(new Event("input", { bubbles: true }));
+            }, true);
+        })();
+    </script>
+    <script>
+        navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' }).then(function (reg) {
+            reg.update();
+        }).catch(function () { });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,30 @@
+name: Deploy Mahgoub Store to Cloudflare Pages
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Publish Blazor WASM
+        run: dotnet publish Mahgoub_Store/Mahgoub_Store.csproj -c Release -o cf-dist
+
+      - name: Sync Pages Functions
+        run: |
+          mkdir -p functions
+          cp -a Mahgoub_Store/functions/. functions/
+
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy cf-dist/wwwroot --project-name=mahgoub-store

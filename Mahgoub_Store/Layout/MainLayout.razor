@@ -1,0 +1,99 @@
+﻿@inherits LayoutComponentBase
+@implements IDisposable
+@inject TenantHostService Host
+@inject StoreApiClient Api
+@inject CartService Cart
+@inject StoreBrandHub Brand
+@inject NavigationManager Nav
+
+<div class="store-shell" style="@BrandStyle">
+    <header class="store-header">
+        <a class="brand" href="@HomeHref">
+            @if (!string.IsNullOrWhiteSpace(_logoSrc))
+            {
+                <img class="brand__logo" src="@_logoSrc" alt="@_storeName" />
+            }
+            <span class="brand__name">@_storeName</span>
+            @if (_discount > 0)
+            {
+                <span class="sale-badge sale-badge--header">خصم @_discount%</span>
+            }
+        </a>
+        <a class="cart-chip" href="@Host.CartUrl()" aria-label="السلة">
+            <span class="cart-chip__icon">🛒</span>
+            <span>السلة</span>
+            @if (Cart.TotalQty > 0)
+            {
+                <span class="cart-chip__count">@Cart.TotalQty</span>
+            }
+        </a>
+    </header>
+    <main class="store-main">
+        @Body
+    </main>
+</div>
+
+@code {
+    private string _storeName = "أنظمة محجوب";
+    private string _color = StoreBrandCss.MahgoubNavy;
+    private string? _logoSrc = "logo.svg";
+    private int _discount;
+    private string? _slug;
+    private string HomeHref => Host.HomeUrl();
+
+    private string BrandStyle => StoreBrandCss.ShellStyle(_color);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Cart.Changed += OnCart;
+        Brand.Changed += OnBrand;
+        _slug = Host.ResolveSlug();
+        if (string.IsNullOrWhiteSpace(_slug))
+        {
+            ApplyMahgoub();
+            return;
+        }
+
+        if (Brand.Current is not null)
+            Apply(Brand.Current);
+        _ = await Api.BootstrapAsync(_slug);
+    }
+
+    private void OnBrand() => InvokeAsync(() =>
+    {
+        if (Brand.Current is not null)
+            Apply(Brand.Current);
+    });
+
+    private void Apply(StoreBootstrapDto boot)
+    {
+        if (!boot.Available)
+        {
+            ApplyMahgoub();
+            return;
+        }
+
+        _storeName = string.IsNullOrWhiteSpace(boot.Name) ? "المتجر" : boot.Name;
+        _color = StoreBrandCss.NormalizeHex(boot.PrimaryColor);
+        _logoSrc = boot.HasLogo && !string.IsNullOrWhiteSpace(_slug) ? Api.LogoUrl(_slug) : null;
+        _discount = boot.DiscountPercent;
+        StateHasChanged();
+    }
+
+    private void ApplyMahgoub()
+    {
+        _storeName = "أنظمة محجوب";
+        _color = StoreBrandCss.MahgoubNavy;
+        _logoSrc = "logo.svg";
+        _discount = 0;
+        StateHasChanged();
+    }
+
+    private void OnCart() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Cart.Changed -= OnCart;
+        Brand.Changed -= OnBrand;
+    }
+}

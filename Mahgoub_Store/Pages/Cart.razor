@@ -1,0 +1,358 @@
+@page "/cart"
+@page "/{tenantSlug}/cart"
+@using Mahgoub_Store.Helpers
+@implements IDisposable
+@inject TenantHostService Host
+@inject StoreApiClient Api
+@inject CartService Bag
+@inject OrderLockService Locks
+@inject NavigationManager Nav
+
+<PageTitle>السلة</PageTitle>
+
+@if (!string.IsNullOrWhiteSpace(_blocked))
+{
+    <EmptyState Title="المتجر غير متاح" Message="@_blocked" />
+}
+else if (_lock is not null || _outcome is not null)
+{
+    <div class="empty-state @(_outcome == "accepted" ? "empty-state--ok" : null)">
+        @if (_outcome == "accepted")
+        {
+            <div class="ok-mark" aria-hidden="true">✓</div>
+            <h1>تم قبول طلبك</h1>
+            <p>جاري تحضيره الآن. شكراً لانتظارك.</p>
+        }
+        else
+        {
+            <div class="empty-state__mark">
+                @if (!string.IsNullOrWhiteSpace(_logoSrc))
+                {
+                    <img src="@_logoSrc" alt="" />
+                }
+            </div>
+            <h1>تم إرسال طلبك</h1>
+            <p>الطلب مقفل بانتظار رد الكاشير. لا يمكن التعديل أو الإلغاء.</p>
+            <p class="status-line">الحالة: <strong>@_statusText</strong></p>
+            <p class="muted">مهلة الرد خمس دقائق.</p>
+        }
+        @if (_outcome is "accepted" or "rejected" or "timeout")
+        {
+            <a class="btn" href="@Host.HomeUrl()" style="margin-top:16px;width:auto;display:inline-block;">العودة للقائمة</a>
+        }
+    </div>
+}
+else
+{
+    <div class="checkout">
+        <section class="panel">
+            <div class="panel__head">
+                <h1>السلة</h1>
+                <a class="seg__btn seg--on btn-menu" href="@Host.HomeUrl()">قائمة الأصناف</a>
+            </div>
+            @if (Bag.Lines.Count == 0)
+            {
+                <p class="muted">السلة فارغة.</p>
+            }
+            else
+            {
+                @foreach (var line in Bag.Lines.ToList())
+                {
+                    <div class="line @(line.Unavailable ? "line--bad" : null)">
+                        <div class="line__info">
+                            <strong>@line.Name</strong>
+                            @if (!string.IsNullOrWhiteSpace(line.Note))
+                            {
+                                <span class="line__mod">@line.Note</span>
+                            }
+                            @if (line.Unavailable)
+                            {
+                                <p class="line__warn" role="alert">⚠ هذا الصنف غير متوفر</p>
+                            }
+                            @if (line.DiscountPercent > 0 && line.OriginalPrice > line.Price)
+                            {
+                                <p class="price price--sale">
+                                    <span class="price__old">@((line.OriginalPrice * line.Qty).ToString("0.##")) د.ل</span>
+                                    <span>@((line.Price * line.Qty).ToString("0.##")) د.ل</span>
+                                </p>
+                            }
+                            else
+                            {
+                                <p class="price">@((line.Price * line.Qty).ToString("0.##")) د.ل</p>
+                            }
+                        </div>
+                        <div class="line__qty">
+                            <button type="button" class="qty-step" aria-label="زيادة"
+                                    @onclick="() => Bag.SetQty(line.ItemId, line.Note, line.Qty + 1)">+</button>
+                            <span class="qty-val">@line.Qty</span>
+                            <button type="button" class="qty-step" aria-label="نقص"
+                                    @onclick="() => Bag.SetQty(line.ItemId, line.Note, line.Qty - 1)">−</button>
+                            <button class="row-del" type="button" title="حذف" aria-label="حذف"
+                                    @onclick="() => Bag.Remove(line)">×</button>
+                        </div>
+                    </div>
+                }
+                <div class="totals">
+                    @if (Bag.HasDiscount)
+                    {
+                        <div class="totals__row muted">
+                            <span>قبل الخصم</span>
+                            <span>@Bag.OriginalSubtotal.ToString("0.##") د.ل</span>
+                        </div>
+                    }
+                    <div class="totals__row">
+                        <span>الإجمالي</span>
+                        <strong>@Bag.Subtotal.ToString("0.##") د.ل</strong>
+                    </div>
+                </div>
+            }
+        </section>
+
+        @if (Bag.Lines.Count > 0)
+        {
+            <section class="panel">
+                <h2>إتمام الطلب</h2>
+                <label>نوع الطلب</label>
+                <div class="seg">
+                    <button type="button" class="@SegClass("pickup")" @onclick='() => _fulfillment = "pickup"'>استلام</button>
+                    <button type="button" class="@SegClass("delivery")" @onclick='() => _fulfillment = "delivery"'>توصيل</button>
+                </div>
+
+                <label>الاسم</label>
+                <input value="@_name" maxlength="80" @oninput="OnNameInput" />
+
+                <label>رقم الهاتف</label>
+                <input value="@_phone" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="10" dir="ltr"
+                       placeholder="09xxxxxxxx" autocomplete="tel" data-digits="1"
+                       @onkeydown="OnPhoneKeyDown" @onpaste="OnPhonePaste"
+                       @oninput="OnPhoneInput" />
+
+                @if (_fulfillment == "delivery")
+                {
+                    <label>عنوان التوصيل</label>
+                    <textarea @bind="_address" rows="3" maxlength="300" @bind:after="OnAddressSanitize"></textarea>
+                }
+
+                <label>ملاحظات الطلب</label>
+                <textarea @bind="_orderNote" rows="2" maxlength="300" placeholder="أضف طلبات خاصة أو ملاحظات…" @bind:after="OnOrderNoteSanitize"></textarea>
+
+                <label>طريقة الدفع عند التنفيذ</label>
+                <select @bind="_paymentId">
+                    @foreach (var p in _payments)
+                    {
+                        <option value="@p.Id">@p.Name</option>
+                    }
+                </select>
+
+                @if (!string.IsNullOrWhiteSpace(_error))
+                {
+                    <p class="error">@_error</p>
+                }
+
+                <button class="btn btn--block" type="button" disabled="@_busy" @onclick="SubmitAsync">@_submitLabel</button>
+            </section>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string? TenantSlug { get; set; }
+
+    private string? _slug;
+    private string? _blocked;
+    private LockedOrderState? _lock;
+    private string _statusText = "بانتظار موافقة الكاشير";
+    private string? _outcome;
+    private string _fulfillment = "pickup";
+    private string _name = "";
+    private string _phone = "";
+    private string _address = "";
+    private string _orderNote = "";
+    private int _paymentId;
+    private string? _error;
+    private bool _busy;
+    private string _submitLabel = "إرسال الطلب";
+    private string? _logoSrc;
+    private List<StorePaymentDto> _payments = [];
+    private CancellationTokenSource? _poll;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Bag.Changed += OnBag;
+        _slug = Host.ResolveSlug();
+        _ = TenantSlug;
+        if (string.IsNullOrWhiteSpace(_slug))
+        {
+            _blocked = "لم يتم التعرف على المتجر.";
+            return;
+        }
+
+        var boot = await Api.BootstrapAsync(_slug);
+        if (boot is null || !boot.Available)
+        {
+            _blocked = boot?.Message ?? "هذا المتجر غير متاح حالياً، يرجى الزيارة لاحقاً";
+            return;
+        }
+
+        _logoSrc = boot.HasLogo ? Api.LogoUrl(_slug) : null;
+        _payments = await Api.PaymentsAsync(_slug);
+        if (_payments.Count > 0)
+            _paymentId = _payments[0].Id;
+
+        _lock = await Locks.LoadAsync(_slug);
+        if (_lock is not null)
+            _ = PollAsync();
+    }
+
+    private void OnLineNote(CartLine line, ChangeEventArgs e) =>
+        Bag.SetNote(line, StoreSafeText.ItemNote(e.Value?.ToString()));
+
+    private void OnBag() => InvokeAsync(StateHasChanged);
+
+    private string SegClass(string kind) =>
+        kind == _fulfillment ? "seg__btn seg--on" : "seg__btn";
+
+    private void OnNameInput(ChangeEventArgs e) =>
+        _name = StoreSafeText.PersonName(e.Value?.ToString());
+
+    private void OnAddressSanitize() => _address = StoreSafeText.Address(_address);
+    private void OnOrderNoteSanitize() => _orderNote = StoreSafeText.Note(_orderNote);
+
+    private void OnPhoneKeyDown(KeyboardEventArgs e) { }
+
+    private void OnPhonePaste() { }
+
+    private void OnPhoneInput(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString() ?? "";
+        _phone = new string(raw.Where(char.IsDigit).Take(10).ToArray());
+    }
+
+    private static bool IsLibyanPhone(string phone) =>
+        System.Text.RegularExpressions.Regex.IsMatch(phone ?? "", @"^09\d{8}$");
+
+    private async Task SubmitAsync()
+    {
+        if (_busy || string.IsNullOrWhiteSpace(_slug) || Bag.Lines.Count == 0)
+            return;
+
+        _error = null;
+        Bag.ClearUnavailable();
+        if (string.IsNullOrWhiteSpace(_name))
+        {
+            _error = "أدخل الاسم.";
+            return;
+        }
+        if (!IsLibyanPhone(_phone.Trim()))
+        {
+            _error = "رقم الهاتف يجب أن يكون 09 متبوعاً بثمانية أرقام.";
+            return;
+        }
+        if (_fulfillment == "delivery" && string.IsNullOrWhiteSpace(_address))
+        {
+            _error = "عنوان التوصيل إلزامي.";
+            return;
+        }
+        if (_paymentId <= 0)
+        {
+            _error = "اختر طريقة الدفع.";
+            return;
+        }
+
+        _busy = true;
+        _submitLabel = "جاري الإرسال…";
+        try
+        {
+            var req = new SubmitOrderRequest
+            {
+                CustomerName = StoreSafeText.PersonName(_name),
+                Phone = _phone.Trim(),
+                Fulfillment = _fulfillment,
+                Address = _fulfillment == "delivery" ? StoreSafeText.Address(_address) : null,
+                OrderNote = StoreSafeText.Note(_orderNote),
+                PaymentId = _paymentId,
+                Lines = Bag.Lines.Select(l => new SubmitOrderLine
+                {
+                    ItemId = l.ItemId,
+                    Qty = l.Qty,
+                    Note = StoreSafeText.ItemNote(l.Note)
+                }).ToList()
+            };
+
+            var (ok, err) = await Api.SubmitAsync(_slug, req);
+            if (ok is null)
+            {
+                if (err is string e && e.StartsWith("UNAVAILABLE:", StringComparison.Ordinal))
+                {
+                    var ids = e[12..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Select(x => int.TryParse(x, out var n) ? n : 0)
+                        .Where(n => n > 0)
+                        .ToList();
+                    Bag.MarkUnavailable(ids);
+                    _error = "بعض الأصناف غير متوفرة. راجع التنبيه أسفل الصنف.";
+                    return;
+                }
+                _error = err;
+                return;
+            }
+
+            _lock = new LockedOrderState
+            {
+                OrderId = ok.OrderId,
+                Token = ok.Token,
+                ExpiresAtUtc = ok.ExpiresAtUtc,
+                Phone = _phone.Trim()
+            };
+            await Locks.SaveAsync(_slug, _lock);
+            Bag.Clear();
+            _ = PollAsync();
+        }
+        finally
+        {
+            _busy = false;
+            _submitLabel = "إرسال الطلب";
+        }
+    }
+
+    private async Task PollAsync()
+    {
+        _poll?.Cancel();
+        _poll = new CancellationTokenSource();
+        var ct = _poll.Token;
+        while (!ct.IsCancellationRequested && _lock is not null && !string.IsNullOrWhiteSpace(_slug))
+        {
+            var st = await Api.StatusAsync(_slug, _lock.OrderId, _lock.Token, ct);
+            if (st is not null)
+            {
+                _statusText = st.Status switch
+                {
+                    "pending" => "بانتظار موافقة الكاشير",
+                    "accepted" => "تمت الموافقة — جاري تجهيز طلبك",
+                    "rejected" => "تم رفض الطلب",
+                    "timeout" => "أُلغي الطلب لعدم رد الكاشير",
+                    _ => st.Status
+                };
+                await InvokeAsync(StateHasChanged);
+
+                if (st.Status is "accepted" or "rejected" or "timeout")
+                {
+                    _outcome = st.Status;
+                    await Locks.ClearAsync(_slug);
+                    _lock = st.Status == "accepted" ? _lock : null;
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+            }
+
+            try { await Task.Delay(2000, ct); }
+            catch (TaskCanceledException) { return; }
+        }
+    }
+
+    public void Dispose()
+    {
+        Bag.Changed -= OnBag;
+        _poll?.Cancel();
+        _poll?.Dispose();
+    }
+}

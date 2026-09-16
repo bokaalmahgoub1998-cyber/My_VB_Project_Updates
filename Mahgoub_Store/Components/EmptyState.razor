@@ -1,0 +1,16 @@
+<div class="empty-state">
+    @if (ShowBrandLogo)
+    {
+        <div class="empty-state__mark" aria-hidden="true">
+            <img src="logo.svg" alt="" />
+        </div>
+    }
+    <h1>@Title</h1>
+    <p>@Message</p>
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "أنظمة محجوب";
+    [Parameter] public string Message { get; set; } = "المتجر غير متاح حالياً، يرجى الزيارة لاحقاً";
+    [Parameter] public bool ShowBrandLogo { get; set; } = true;
+}

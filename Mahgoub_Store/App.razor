@@ -1,0 +1,21 @@
+﻿@using Mahgoub_Store.Layout
+@using Mahgoub_Store.Services
+@inject TenantHostService Host
+@inject StoreApiClient Api
+@inject NavigationManager Nav
+
+<Router AppAssembly="@typeof(App).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <div class="empty-state">
+                <div class="empty-state__mark" aria-hidden="true"></div>
+                <h1>الصفحة غير موجودة</h1>
+                <p>تحقق من الرابط ثم عد إلى المتجر.</p>
+            </div>
+        </LayoutView>
+    </NotFound>
+</Router>

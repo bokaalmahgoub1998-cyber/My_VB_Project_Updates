@@ -1,0 +1,185 @@
+﻿@page "/"
+@page "/{tenantSlug}"
+@using Mahgoub_Store.Components
+@using Mahgoub_Store.Helpers
+@inject TenantHostService Host
+@inject StoreApiClient Api
+@inject CartService Cart
+@inject MenuCacheService Cache
+@inject OrderLockService Locks
+@inject StoreBrandHub Brand
+@inject NavigationManager Nav
+
+<PageTitle>@_title</PageTitle>
+
+@if (!string.IsNullOrWhiteSpace(_blocked))
+{
+    <EmptyState Title="المتجر غير متاح" Message="@_blocked" />
+}
+else if (_loading)
+{
+    <EmptyState Title="أنظمة محجوب" Message="جاري تحميل القائمة…" />
+}
+else
+{
+    <div class="menu-tools">
+        <label class="menu-search">
+            <span class="menu-search__ico" aria-hidden="true">⌕</span>
+            <input type="search" inputmode="search" autocomplete="off"
+                   placeholder="ابحث عن صنف…" value="@_q" @oninput="OnSearch" />
+        </label>
+    </div>
+    <section class="cats" aria-label="التصنيفات">
+        <button class="chip @( _cat == 0 ? "chip--on" : null)" @onclick="() => _cat = 0">الكل</button>
+        @foreach (var c in _catalog.Categories)
+        {
+            <button class="chip @( _cat == c.Id ? "chip--on" : null)" @onclick="() => _cat = c.Id">@c.Name</button>
+        }
+    </section>
+    @if (!VisibleItems.Any())
+    {
+        <EmptyState Title="@_title"
+                    ShowBrandLogo="false"
+                    Message="@(string.IsNullOrWhiteSpace(_q) ? "لا توجد أصناف متاحة للعرض حالياً." : "لا توجد أصناف مطابقة للبحث.")" />
+    }
+    else
+    {
+    <section class="grid" aria-label="المنتجات">
+        @foreach (var item in VisibleItems)
+        {
+            <article class="card">
+                <div class="card__media">
+                    @if (item.HasImage && !string.IsNullOrWhiteSpace(_slug))
+                    {
+                        <img src="@Api.ImageUrl(_slug, item.Id)" alt="@item.Name" loading="lazy" />
+                    }
+                </div>
+                <div class="card__body">
+                    <h2>@item.Name</h2>
+                    @if (item.DiscountPercent > 0)
+                    {
+                        <p class="price price--sale">
+                            <span class="price__old">@item.Price.ToString("0.##") د.ل</span>
+                            <span>@item.EffectivePrice.ToString("0.##") د.ل</span>
+                            <span class="sale-badge">خصم @item.DiscountPercent%</span>
+                        </p>
+                    }
+                    else
+                    {
+                        <p class="price">@item.Price.ToString("0.##") د.ل</p>
+                    }
+                    <button class="btn" type="button" @onclick="() => AddToCart(item)">أضف للسلة</button>
+                    <div class="tile-bar">
+                        <button type="button" class="qty-step" aria-label="زيادة" @onclick="() => Plus(item.Id)">+</button>
+                        <span class="qty-val">@QtyOf(item.Id)</span>
+                        <button type="button" class="qty-step" aria-label="نقص" @onclick="() => Minus(item.Id)">−</button>
+                    </div>
+                    <input class="note note--card" maxlength="200" placeholder="ملاحظة على الصنف (اختياري)"
+                           value="@NoteOf(item.Id)" @onchange="e => SetNote(item.Id, e)" />
+                </div>
+            </article>
+        }
+    </section>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantSlug { get; set; }
+
+    private string? _slug;
+    private string _title = "المتجر";
+    private string? _blocked;
+    private bool _loading = true;
+    private int _cat;
+    private string _q = "";
+    private StoreCatalogDto _catalog = new();
+    private readonly Dictionary<int, int> _qty = new();
+    private readonly Dictionary<int, string> _note = new();
+
+    private IEnumerable<StoreItemDto> VisibleItems
+    {
+        get
+        {
+            IEnumerable<StoreItemDto> items;
+            string q = _q.Trim();
+            if (q.Length > 0)
+                items = _catalog.Items.Where(i => (i.Name ?? "").Contains(q, StringComparison.OrdinalIgnoreCase));
+            else if (_cat == 0)
+                items = _catalog.Items;
+            else
+                items = _catalog.Items.Where(i => i.CategoryId == _cat);
+            return items;
+        }
+    }
+
+    private int QtyOf(int id) => _qty.TryGetValue(id, out var q) ? q : 1;
+    private string NoteOf(int id) => _note.TryGetValue(id, out var n) ? n : "";
+
+    private void OnSearch(ChangeEventArgs e) =>
+        _q = e.Value?.ToString() ?? "";
+
+    private void Plus(int id) => _qty[id] = Math.Clamp(QtyOf(id) + 1, 1, 99);
+    private void Minus(int id) => _qty[id] = Math.Clamp(QtyOf(id) - 1, 1, 99);
+
+    private void SetNote(int id, ChangeEventArgs e) =>
+        _note[id] = StoreSafeText.ItemNote(e.Value?.ToString());
+
+    private void AddToCart(StoreItemDto item)
+    {
+        Cart.Add(item, QtyOf(item.Id), StoreSafeText.ItemNote(NoteOf(item.Id)));
+        _qty[item.Id] = 1;
+        _note[item.Id] = "";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _slug = Host.ResolveSlug();
+        _ = TenantSlug;
+        if (string.IsNullOrWhiteSpace(_slug))
+        {
+            _blocked = "لم يتم التعرف على المتجر.";
+            _loading = false;
+            return;
+        }
+
+        var lockState = await Locks.LoadAsync(_slug);
+        if (lockState is not null)
+        {
+            Nav.NavigateTo(Host.CartUrl());
+            return;
+        }
+
+        var boot = await Api.BootstrapAsync(_slug);
+        if (boot is null || !boot.Available)
+        {
+            _blocked = boot?.Message ?? "هذا المتجر غير متاح حالياً، يرجى الزيارة لاحقاً";
+            _loading = false;
+            return;
+        }
+
+        _title = boot.Name;
+
+        if (Cache.IsFresh && Cache.Catalog is not null)
+            _catalog = Cache.Catalog;
+        else
+        {
+            var cat = await Api.CatalogAsync(_slug);
+            if (cat is null)
+            {
+                _blocked = "المتجر غير متاح حالياً، يرجى الزيارة لاحقاً";
+                _loading = false;
+                return;
+            }
+            _catalog = cat;
+            Cache.Set(cat);
+        }
+
+        if (_catalog.DiscountPercent > 0 && Brand.Current is { Available: true } live)
+        {
+            live.DiscountPercent = Math.Max(live.DiscountPercent, _catalog.DiscountPercent);
+            Brand.Publish(live);
+        }
+
+        _loading = false;
+    }
+}

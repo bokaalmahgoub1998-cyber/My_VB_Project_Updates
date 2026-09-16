@@ -1,0 +1,17 @@
+{
+  "name": "محجوب أونلاين",
+  "short_name": "المتجر",
+  "id": "./",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#254055",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "logo.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    }
+  ]
+}
