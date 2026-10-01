@@ -149,10 +149,10 @@ public sealed class StoreApiClient
         _brand.Publish(dto);
     }
 
-    public async Task<StoreCatalogDto?> CatalogAsync(string slug, CancellationToken ct = default)
+    public async Task<StoreCatalogDto?> CatalogAsync(string slug, int skip = 0, int take = 24, CancellationToken ct = default)
     {
         await EnsureTunnel(slug, ct);
-        using var resp = await DispatchAsync(HttpMethod.Get, "api/webstore/catalog", null, ct);
+        using var resp = await DispatchAsync(HttpMethod.Get, $"api/webstore/catalog?skip={skip}&take={take}", null, ct);
         if (!resp.IsSuccessStatusCode || IsHtml(resp))
             return null;
         try { return await resp.Content.ReadFromJsonAsync<StoreCatalogDto>(Json, ct); }

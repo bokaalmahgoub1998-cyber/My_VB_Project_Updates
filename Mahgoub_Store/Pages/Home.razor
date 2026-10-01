@@ -2,7 +2,9 @@
 @page "/{tenantSlug}"
 @using Mahgoub_Store.Components
 @using Mahgoub_Store.Helpers
+@implements IDisposable
 @inject TenantHostService Host
+@inject IJSRuntime JS
 @inject StoreApiClient Api
 @inject CartService Cart
 @inject MenuCacheService Cache
@@ -30,10 +32,10 @@ else
         </label>
     </div>
     <section class="cats" aria-label="التصنيفات">
-        <button class="chip @( _cat == 0 ? "chip--on" : null)" @onclick="() => _cat = 0">الكل</button>
+        <button class="chip @( _cat == 0 ? "chip--on" : null)" @onclick="() => SelectCat(0)">الكل</button>
         @foreach (var c in _catalog.Categories)
         {
-            <button class="chip @( _cat == c.Id ? "chip--on" : null)" @onclick="() => _cat = c.Id">@c.Name</button>
+            <button class="chip @( _cat == c.Id ? "chip--on" : null)" @onclick="() => SelectCat(c.Id)">@c.Name</button>
         }
     </section>
     @if (!VisibleItems.Any())
@@ -81,6 +83,10 @@ else
         }
     </section>
     }
+    @if (!Cache.IsComplete)
+    {
+        <div class="more-sentinel" @ref="_more"></div>
+    }
 }
 
 @code {
@@ -115,8 +121,19 @@ else
     private int QtyOf(int id) => _qty.TryGetValue(id, out var q) ? q : 1;
     private string NoteOf(int id) => _note.TryGetValue(id, out var n) ? n : "";
 
-    private void OnSearch(ChangeEventArgs e) =>
+    private void SelectCat(int id)
+    {
+        _cat = id;
+        if (id != 0)
+            _ = EnsureRestAsync();
+    }
+
+    private void OnSearch(ChangeEventArgs e)
+    {
         _q = e.Value?.ToString() ?? "";
+        if (_q.Trim().Length > 0)
+            _ = EnsureRestAsync();
+    }
 
     private void Plus(int id) => _qty[id] = Math.Clamp(QtyOf(id) + 1, 1, 99);
     private void Minus(int id) => _qty[id] = Math.Clamp(QtyOf(id) - 1, 1, 99);
@@ -159,19 +176,18 @@ else
 
         _title = boot.Name;
 
-        if (Cache.IsFresh && Cache.Catalog is not null)
-            _catalog = Cache.Catalog;
-        else
+        if (Cache.HasItems && Cache.Catalog is not null)
         {
-            var cat = await Api.CatalogAsync(_slug);
-            if (cat is null)
-            {
-                _blocked = "المتجر غير متاح حالياً، يرجى الزيارة لاحقاً";
-                _loading = false;
-                return;
-            }
-            _catalog = cat;
-            Cache.Set(cat);
+            _catalog = Cache.Catalog;
+            _loading = false;
+            return;
+        }
+
+        if (!await LoadPageAsync(0))
+        {
+            _blocked = "المتجر غير متاح حالياً، يرجى الزيارة لاحقاً";
+            _loading = false;
+            return;
         }
 
         if (_catalog.DiscountPercent > 0 && Brand.Current is { Available: true } live)
@@ -182,4 +198,69 @@ else
 
         _loading = false;
     }
+
+    private ElementReference _more;
+    private bool _loadingMore;
+    private DotNetObjectReference<Home>? _self;
+
+    private async Task<bool> LoadPageAsync(int skip)
+    {
+        if (_loadingMore || string.IsNullOrWhiteSpace(_slug))
+            return false;
+        _loadingMore = true;
+        try
+        {
+            var page = await Api.CatalogAsync(_slug, skip, 24);
+            if (page is null)
+                return false;
+            Cache.Merge(page);
+            _catalog = Cache.Catalog ?? page;
+            return page.Items.Count > 0 || page.Total == 0;
+        }
+        finally
+        {
+            _loadingMore = false;
+        }
+    }
+
+    private async Task EnsureRestAsync()
+    {
+        if (Cache.IsComplete || _loadingMore)
+            return;
+        while (!Cache.IsComplete && _catalog.Items.Count < Math.Max(_catalog.Total, 1))
+        {
+            int before = _catalog.Items.Count;
+            if (!await LoadPageAsync(before))
+                break;
+            if (_catalog.Items.Count == before)
+                break;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    [JSInvokable]
+    public async Task LoadMore()
+    {
+        if (Cache.IsComplete || _loadingMore || _loading)
+            return;
+        if (await LoadPageAsync(_catalog.Items.Count))
+            await InvokeAsync(StateHasChanged);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Cache.IsComplete || _loading || !string.IsNullOrWhiteSpace(_blocked))
+            return;
+        _self ??= DotNetObjectReference.Create(this);
+        try
+        {
+            await JS.InvokeVoidAsync("mahgoubMore.observe", _more, _self);
+        }
+        catch
+        {
+            /* المراقبة تُعاد في الرسم التالي */
+        }
+    }
+
+    public void Dispose() => _self?.Dispose();
 }

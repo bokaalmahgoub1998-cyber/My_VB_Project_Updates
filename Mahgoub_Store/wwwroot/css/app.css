@@ -71,20 +71,21 @@ button, input, select, textarea {
 .cart-chip {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    height: 40px;
-    padding: 0 14px;
+    gap: 6px;
+    height: 34px;
+    padding: 0 10px;
     background: var(--brand-fill);
     color: #fff;
     text-decoration: none;
-    border-radius: 12px;
+    border-radius: 999px;
     font-weight: 700;
-    font-size: 0.92rem;
+    font-size: 0.78rem;
     line-height: 1;
+    flex-shrink: 0;
 }
 
 .cart-chip__icon { display: grid; }
-.cart-chip__icon svg { width: 18px; height: 18px; display: block; }
+.cart-chip__icon svg { width: 16px; height: 16px; display: block; }
 
 .cart-chip__count {
     background: #fff;
@@ -135,6 +136,8 @@ button, input, select, textarea {
     font-size: 1rem;
     color: var(--text);
 }
+
+.more-sentinel { height: 1px; }
 
 .menu-search input::placeholder {
     color: var(--muted);
@@ -298,17 +301,18 @@ a.seg__btn {
     margin-bottom: 8px;
 }
 
-.panel__head h1 { margin: 0; font-size: 1.15rem; font-weight: 800; }
+.panel__head h1 { margin: 0; font-size: 1rem; font-weight: 800; }
 
-.panel__head .seg__btn.btn-menu {
+.panel__head .btn-menu {
     width: auto;
-    min-width: 0;
-    min-height: 32px;
-    padding: 4px 12px;
-    font-size: 0.82rem;
+    min-height: 28px;
+    padding: 2px 10px;
+    font-size: 0.75rem;
     font-weight: 700;
-    border-width: 1px;
-    border-radius: 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--text);
     text-decoration: none;
     display: inline-flex;
     align-items: center;
@@ -551,7 +555,7 @@ a.seg__btn {
 @media (max-width: 720px) {
     .store-header { padding: 10px 12px; }
     .brand__name { font-size: 0.95rem; }
-    .cart-chip { height: 36px; padding: 0 10px; font-size: 0.82rem; gap: 6px; }
+    .cart-chip { height: 32px; padding: 0 8px; font-size: 0.72rem; }
     .store-main { padding: 12px 10px 36px; }
     .menu-search input { font-size: 0.95rem; }
     .grid { grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 10px; }

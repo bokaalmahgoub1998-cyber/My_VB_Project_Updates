@@ -22,6 +22,7 @@ public sealed class StoreCatalogDto
     public List<StoreCategoryDto> Categories { get; set; } = [];
     public List<StoreItemDto> Items { get; set; } = [];
     public int DiscountPercent { get; set; }
+    public int Total { get; set; }
 }
 
 public sealed class StoreCategoryDto
@@ -78,6 +79,7 @@ public sealed class SubmitOrderRequest
     public string Phone { get; set; } = "";
     public int Fulfillment { get; set; }
     public string? Address { get; set; }
+    public string? Location { get; set; }
     public string? OrderNote { get; set; }
     public string? ClientFingerprint { get; set; }
     public int PaymentId { get; set; }

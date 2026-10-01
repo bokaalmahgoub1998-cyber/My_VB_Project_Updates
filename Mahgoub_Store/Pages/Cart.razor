@@ -50,7 +50,7 @@ else
         <section class="panel">
             <div class="panel__head">
                 <h1>السلة</h1>
-                <a class="seg__btn seg--on btn-menu" href="@Host.HomeUrl()">قائمة الأصناف</a>
+                <a class="btn-menu" href="@Host.HomeUrl()">الأصناف</a>
             </div>
             @if (Bag.Lines.Count == 0)
             {
@@ -139,13 +139,15 @@ else
                 {
                     <div class="loc-card">
                         <p class="loc-card__msg">لا يمكن إرسال الطلب قبل تحديد موقعك.</p>
-                        <button type="button" class="btn btn--block" data-mahgoub-geo disabled="@_locBusy" @onclick="CaptureLocationAsync">
+                        <button type="button" class="btn btn--block" @ref="_geoBtn" disabled="@_locBusy">
                             @(_locBusy ? "جاري تحديد الموقع…" : "تحديد موقعي الحالي")
                         </button>
                         @if (!string.IsNullOrWhiteSpace(_locMsg))
                         {
                             <p class="@(_customerLoc is null ? "error" : "loc-card__ok")">@_locMsg</p>
                         }
+                        <label>العنوان</label>
+                        <textarea @bind="_addressText" rows="2" maxlength="300" placeholder="اختياري"></textarea>
                     </div>
                 }
 
@@ -203,6 +205,9 @@ else
     private string? _customerLoc;
     private string? _locMsg;
     private bool _locBusy;
+    private string _addressText = "";
+    private ElementReference _geoBtn;
+    private DotNetObjectReference<Cart>? _geoRef;
     private List<StorePaymentDto> _payments = [];
     private CancellationTokenSource? _poll;
 
@@ -271,34 +276,52 @@ else
         }
     }
 
-    private async Task CaptureLocationAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_locBusy)
+        if (_fulfillment != 1)
             return;
-        _locBusy = true;
-        _error = null;
-        _locMsg = null;
+        _geoRef ??= DotNetObjectReference.Create(this);
         try
         {
-            _customerLoc = await JS.InvokeAsync<string>("mahgoubGeo.locate");
+            await JS.InvokeVoidAsync("mahgoubGeo.bind", _geoBtn, _geoRef);
+        }
+        catch
+        {
+            /* يُعاد الربط في الرسم التالي */
+        }
+    }
+
+    [JSInvokable]
+    public Task OnGeo(string value)
+    {
+        if (value == "busy")
+        {
+            _locBusy = true;
+            _locMsg = null;
+            return InvokeAsync(StateHasChanged);
+        }
+
+        _locBusy = false;
+        _error = null;
+        if (!string.IsNullOrWhiteSpace(value) && value.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            _customerLoc = value;
             _locMsg = "تم تحديد موقعك.";
         }
-        catch (Exception ex)
+        else
         {
             _customerLoc = null;
-            string msg = ex.Message ?? "";
-            _locMsg = msg.Contains("insecure", StringComparison.OrdinalIgnoreCase)
-                ? "افتح الموقع عبر الاتصال الآمن."
-                : msg.Contains("denied", StringComparison.OrdinalIgnoreCase)
-                    ? "لم يُسمح بالموقع."
-                    : msg.Contains("unsupported", StringComparison.OrdinalIgnoreCase)
-                        ? "الموقع غير متاح على هذا الجهاز."
-                        : "تعذر تحديد الموقع.";
+            _locMsg = value switch
+            {
+                "insecure" => "افتح الموقع عبر الاتصال الآمن.",
+                "denied" => "لم يُسمح بالموقع.",
+                "off" => "شغّل الموقع من إعدادات الهاتف.",
+                "unsupported" => "الموقع غير متاح على هذا الجهاز.",
+                _ => "تعذر تحديد الموقع."
+            };
         }
-        finally
-        {
-            _locBusy = false;
-        }
+
+        return InvokeAsync(StateHasChanged);
     }
 
     private void OnNameInput(ChangeEventArgs e) =>
@@ -355,7 +378,8 @@ else
                 CustomerName = StoreSafeText.PersonName(_name),
                 Phone = _phone.Trim(),
                 Fulfillment = _fulfillment,
-                Address = _fulfillment == 1 ? _customerLoc : null,
+                Address = _fulfillment == 1 ? StoreSafeText.Address(_addressText) : null,
+                Location = _fulfillment == 1 ? _customerLoc : null,
                 OrderNote = StoreSafeText.Note(_orderNote),
                 PaymentId = _paymentId,
                 Lines = Bag.Lines.Select(l => new SubmitOrderLine
@@ -451,5 +475,6 @@ else
         Brand.Changed -= OnBrandPlace;
         _poll?.Cancel();
         _poll?.Dispose();
+        _geoRef?.Dispose();
     }
 }

@@ -127,12 +127,26 @@ public sealed class OrderLockService
 public sealed class MenuCacheService
 {
     public StoreCatalogDto? Catalog { get; private set; }
-    public DateTime CachedAtUtc { get; private set; }
-    public bool IsFresh => Catalog is not null && DateTime.UtcNow - CachedAtUtc < TimeSpan.FromMinutes(2);
+    public bool HasItems => Catalog?.Items.Count > 0;
+    public bool IsComplete => Catalog is not null && Catalog.Total >= 0 && Catalog.Items.Count >= Catalog.Total;
 
-    public void Set(StoreCatalogDto catalog)
+    public void Merge(StoreCatalogDto page)
     {
-        Catalog = catalog;
-        CachedAtUtc = DateTime.UtcNow;
+        if (Catalog is null || Catalog.Items.Count == 0)
+        {
+            Catalog = page;
+            return;
+        }
+
+        if (page.Categories.Count > 0)
+            Catalog.Categories = page.Categories;
+        Catalog.Total = page.Total;
+        Catalog.DiscountPercent = page.DiscountPercent;
+        var ids = Catalog.Items.Select(i => i.Id).ToHashSet();
+        foreach (var item in page.Items)
+        {
+            if (ids.Add(item.Id))
+                Catalog.Items.Add(item);
+        }
     }
 }
