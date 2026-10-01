@@ -8,6 +8,7 @@
 @inject OrderLockService Locks
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject StoreBrandHub Brand
 
 <PageTitle>السلة</PageTitle>
 
@@ -129,7 +130,7 @@ else
                             </svg>
                         </a>
                         <div class="branch-card__body">
-                            <span class="branch-card__k">عنوان الفرع</span>
+                            <span class="branch-card__k">@_placeTitle</span>
                             <span class="branch-card__v">@_storeMapLabel</span>
                         </div>
                     </div>
@@ -137,7 +138,7 @@ else
                 else if (_fulfillment == 1)
                 {
                     <div class="loc-card">
-                        <p class="loc-card__msg">للتوصيل يجب مشاركة موقعك الحالي. لا يمكن إرسال الطلب بدون السماح بالموقع على أندرويد أو آيفون.</p>
+                        <p class="loc-card__msg">لا يمكن إرسال الطلب قبل تحديد موقعك.</p>
                         <button type="button" class="btn btn--block" disabled="@_locBusy" @onclick="CaptureLocationAsync">
                             @(_locBusy ? "جاري تحديد الموقع…" : "تحديد موقعي الحالي")
                         </button>
@@ -198,6 +199,7 @@ else
     private string? _logoSrc;
     private string? _storeMapUrl;
     private string _storeMapLabel = "";
+    private string _placeTitle = "عنوان المتجر";
     private string? _customerLoc;
     private string? _locMsg;
     private bool _locBusy;
@@ -207,6 +209,8 @@ else
     protected override async Task OnInitializedAsync()
     {
         Bag.Changed += OnBag;
+        Brand.Changed += OnBrandPlace;
+        ApplyPlace(Brand.Current);
         _slug = Host.ResolveSlug();
         _ = TenantSlug;
         if (string.IsNullOrWhiteSpace(_slug))
@@ -223,8 +227,7 @@ else
         }
 
         _logoSrc = boot.HasLogo ? Api.LogoUrl(_slug) : null;
-        _storeMapUrl = StoreMapLink.OpenUrl(boot.MapText);
-        _storeMapLabel = StoreMapLink.Label(boot.MapText);
+        ApplyPlace(boot);
         _payments = await Api.PaymentsAsync(_slug);
         if (_payments.Count > 0)
             _paymentId = _payments[0].Id;
@@ -238,6 +241,21 @@ else
         Bag.SetNote(line, StoreSafeText.ItemNote(e.Value?.ToString()));
 
     private void OnBag() => InvokeAsync(StateHasChanged);
+
+    private void OnBrandPlace() => InvokeAsync(() =>
+    {
+        ApplyPlace(Brand.Current);
+        StateHasChanged();
+    });
+
+    private void ApplyPlace(StoreBootstrapDto? boot)
+    {
+        if (boot is null || !boot.Available)
+            return;
+        _storeMapUrl = StoreMapLink.OpenUrl(boot.MapText);
+        _storeMapLabel = StoreMapLink.Label(boot.MapText);
+        _placeTitle = boot.Restaurant ? "عنوان المطعم" : "عنوان المتجر";
+    }
 
     private string SegClass(int kind) =>
         kind == _fulfillment ? "seg__btn seg--on" : "seg__btn";
@@ -263,17 +281,17 @@ else
         try
         {
             _customerLoc = await JS.InvokeAsync<string>("mahgoubGeo.locate");
-            _locMsg = "تم أخذ موقعك الحالي. يمكنك إرسال الطلب.";
+            _locMsg = "تم تحديد موقعك.";
         }
         catch (Exception ex)
         {
             _customerLoc = null;
             string msg = ex.Message ?? "";
             _locMsg = msg.Contains("denied", StringComparison.OrdinalIgnoreCase)
-                ? "يجب السماح بالموقع من إعدادات الهاتف (أندرويد أو آيفون) ثم الضغط مرة أخرى. بدون الموقع لا يُرسل طلب التوصيل."
+                ? "لم يُسمح بالموقع."
                 : msg.Contains("unsupported", StringComparison.OrdinalIgnoreCase)
-                    ? "هذا الجهاز لا يوفّر خدمة الموقع."
-                    : "تعذر قراءة الموقع. فعّل خدمة الموقع ثم أعد المحاولة.";
+                    ? "الموقع غير متاح على هذا الجهاز."
+                    : "تعذر تحديد الموقع.";
         }
         finally
         {
@@ -317,7 +335,7 @@ else
         }
         if (_fulfillment == 1 && string.IsNullOrWhiteSpace(_customerLoc))
         {
-            _error = "طلب التوصيل يتطلب موقعك الحالي. اضغط «تحديد موقعي الحالي» واسمح بالصلاحية.";
+            _error = "حدد موقعك أولاً.";
             return;
         }
         if (_paymentId <= 0)
@@ -428,6 +446,7 @@ else
     public void Dispose()
     {
         Bag.Changed -= OnBag;
+        Brand.Changed -= OnBrandPlace;
         _poll?.Cancel();
         _poll?.Dispose();
     }

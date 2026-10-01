@@ -121,6 +121,7 @@ public sealed class StoreApiClient
                     resolved.HasLogo = b.HasLogo;
                     resolved.DiscountPercent = b.DiscountPercent;
                     resolved.MapText = b.MapText ?? "";
+                    resolved.Restaurant = b.Restaurant;
                     if (b.HasLogo)
                         resolved.LogoUrl = LogoUrl(slug);
                 }

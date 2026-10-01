@@ -69,24 +69,34 @@ button, input, select, textarea {
 }
 
 .cart-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
     background: var(--brand-fill);
     color: #fff;
     text-decoration: none;
-    border-radius: 999px;
-    padding: 10px 16px;
-    font-weight: 700;
+    border-radius: 12px;
 }
 
+.cart-chip__icon { display: grid; }
+.cart-chip__icon svg { width: 20px; height: 20px; }
+
 .cart-chip__count {
+    position: absolute;
+    top: -6px;
+    left: -6px;
     background: #fff;
     color: var(--brand-fill);
     border-radius: 999px;
-    min-width: 22px;
+    min-width: 18px;
+    height: 18px;
+    line-height: 18px;
     text-align: center;
-    font-size: 0.85rem;
+    font-size: 0.72rem;
+    font-weight: 800;
+    box-shadow: 0 0 0 2px var(--brand-fill);
 }
 
 .store-main {
@@ -433,8 +443,8 @@ a.seg__btn {
     background: #fff;
 }
 .loc-card { display: block; }
-.loc-card__msg { margin: 0 0 10px; color: var(--text); font-weight: 700; line-height: 1.6; }
-.loc-card__ok { margin: 10px 0 0; color: #067647; font-weight: 800; }
+.loc-card__msg { margin: 0 0 8px; color: var(--text); font-weight: 700; font-size: 0.92rem; line-height: 1.4; }
+.loc-card__ok { margin: 8px 0 0; color: #067647; font-weight: 700; font-size: 0.88rem; }
 .map-pin {
     flex: 0 0 auto;
     width: 52px;
@@ -533,7 +543,7 @@ a.seg__btn {
 @media (max-width: 720px) {
     .store-header { padding: 10px 12px; }
     .brand__name { font-size: 0.95rem; }
-    .cart-chip { padding: 8px 12px; font-size: 0.9rem; }
+    .cart-chip { width: 40px; height: 40px; }
     .store-main { padding: 12px 10px 36px; }
     .menu-search input { font-size: 0.95rem; }
     .grid { grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 10px; }

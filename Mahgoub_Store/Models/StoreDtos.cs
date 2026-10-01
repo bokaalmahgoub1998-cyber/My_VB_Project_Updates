@@ -14,6 +14,7 @@ public sealed class StoreBootstrapDto
     public string? Message { get; set; }
     public int DiscountPercent { get; set; }
     public string MapText { get; set; } = "";
+    public bool Restaurant { get; set; }
 }
 
 public sealed class StoreCatalogDto
