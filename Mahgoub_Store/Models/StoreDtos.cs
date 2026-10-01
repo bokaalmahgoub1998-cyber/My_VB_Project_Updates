@@ -13,6 +13,7 @@ public sealed class StoreBootstrapDto
     public string? TunnelUrl { get; set; }
     public string? Message { get; set; }
     public int DiscountPercent { get; set; }
+    public string MapText { get; set; } = "";
 }
 
 public sealed class StoreCatalogDto
@@ -74,7 +75,7 @@ public sealed class SubmitOrderRequest
 {
     public string CustomerName { get; set; } = "";
     public string Phone { get; set; } = "";
-    public string Fulfillment { get; set; } = "pickup";
+    public int Fulfillment { get; set; }
     public string? Address { get; set; }
     public string? OrderNote { get; set; }
     public string? ClientFingerprint { get; set; }

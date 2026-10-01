@@ -7,6 +7,7 @@
 @inject CartService Bag
 @inject OrderLockService Locks
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>السلة</PageTitle>
 
@@ -114,9 +115,38 @@ else
                 <h2>إتمام الطلب</h2>
                 <label>نوع الطلب</label>
                 <div class="seg">
-                    <button type="button" class="@SegClass("pickup")" @onclick='() => _fulfillment = "pickup"'>استلام</button>
-                    <button type="button" class="@SegClass("delivery")" @onclick='() => _fulfillment = "delivery"'>توصيل</button>
+                    <button type="button" class="@SegClass(0)" @onclick="() => SetFulfillment(0)">استلام من الفرع</button>
+                    <button type="button" class="@SegClass(1)" @onclick="() => SetFulfillment(1)">توصيل</button>
                 </div>
+
+                @if (_fulfillment == 0 && !string.IsNullOrWhiteSpace(_storeMapUrl))
+                {
+                    <div class="branch-card">
+                        <a class="map-pin" href="@_storeMapUrl" target="_blank" rel="noopener noreferrer"
+                           aria-label="فتح موقع المتجر على خرائط جوجل">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/>
+                            </svg>
+                        </a>
+                        <div class="branch-card__body">
+                            <span class="branch-card__k">عنوان الفرع</span>
+                            <span class="branch-card__v">@_storeMapLabel</span>
+                        </div>
+                    </div>
+                }
+                else if (_fulfillment == 1)
+                {
+                    <div class="loc-card">
+                        <p class="loc-card__msg">للتوصيل يجب مشاركة موقعك الحالي. لا يمكن إرسال الطلب بدون السماح بالموقع على أندرويد أو آيفون.</p>
+                        <button type="button" class="btn btn--block" disabled="@_locBusy" @onclick="CaptureLocationAsync">
+                            @(_locBusy ? "جاري تحديد الموقع…" : "تحديد موقعي الحالي")
+                        </button>
+                        @if (!string.IsNullOrWhiteSpace(_locMsg))
+                        {
+                            <p class="@(_customerLoc is null ? "error" : "loc-card__ok")">@_locMsg</p>
+                        }
+                    </div>
+                }
 
                 <label>الاسم</label>
                 <input value="@_name" maxlength="80" @oninput="OnNameInput" />
@@ -126,12 +156,6 @@ else
                        placeholder="09xxxxxxxx" autocomplete="tel" data-digits="1"
                        @onkeydown="OnPhoneKeyDown" @onpaste="OnPhonePaste"
                        @oninput="OnPhoneInput" />
-
-                @if (_fulfillment == "delivery")
-                {
-                    <label>عنوان التوصيل</label>
-                    <textarea @bind="_address" rows="3" maxlength="300" @bind:after="OnAddressSanitize"></textarea>
-                }
 
                 <label>ملاحظات الطلب</label>
                 <textarea @bind="_orderNote" rows="2" maxlength="300" placeholder="أضف طلبات خاصة أو ملاحظات…" @bind:after="OnOrderNoteSanitize"></textarea>
@@ -163,16 +187,20 @@ else
     private LockedOrderState? _lock;
     private string _statusText = "بانتظار موافقة الكاشير";
     private string? _outcome;
-    private string _fulfillment = "pickup";
+    private int _fulfillment;
     private string _name = "";
     private string _phone = "";
-    private string _address = "";
     private string _orderNote = "";
     private int _paymentId;
     private string? _error;
     private bool _busy;
     private string _submitLabel = "إرسال الطلب";
     private string? _logoSrc;
+    private string? _storeMapUrl;
+    private string _storeMapLabel = "";
+    private string? _customerLoc;
+    private string? _locMsg;
+    private bool _locBusy;
     private List<StorePaymentDto> _payments = [];
     private CancellationTokenSource? _poll;
 
@@ -195,6 +223,8 @@ else
         }
 
         _logoSrc = boot.HasLogo ? Api.LogoUrl(_slug) : null;
+        _storeMapUrl = StoreMapLink.OpenUrl(boot.MapText);
+        _storeMapLabel = StoreMapLink.Label(boot.MapText);
         _payments = await Api.PaymentsAsync(_slug);
         if (_payments.Count > 0)
             _paymentId = _payments[0].Id;
@@ -209,13 +239,50 @@ else
 
     private void OnBag() => InvokeAsync(StateHasChanged);
 
-    private string SegClass(string kind) =>
+    private string SegClass(int kind) =>
         kind == _fulfillment ? "seg__btn seg--on" : "seg__btn";
+
+    private void SetFulfillment(int kind)
+    {
+        _fulfillment = kind;
+        _error = null;
+        if (kind == 0)
+        {
+            _customerLoc = null;
+            _locMsg = null;
+        }
+    }
+
+    private async Task CaptureLocationAsync()
+    {
+        if (_locBusy)
+            return;
+        _locBusy = true;
+        _error = null;
+        _locMsg = null;
+        try
+        {
+            _customerLoc = await JS.InvokeAsync<string>("mahgoubGeo.locate");
+            _locMsg = "تم أخذ موقعك الحالي. يمكنك إرسال الطلب.";
+        }
+        catch (Exception ex)
+        {
+            _customerLoc = null;
+            string msg = ex.Message ?? "";
+            _locMsg = msg.Contains("denied", StringComparison.OrdinalIgnoreCase)
+                ? "يجب السماح بالموقع من إعدادات الهاتف (أندرويد أو آيفون) ثم الضغط مرة أخرى. بدون الموقع لا يُرسل طلب التوصيل."
+                : msg.Contains("unsupported", StringComparison.OrdinalIgnoreCase)
+                    ? "هذا الجهاز لا يوفّر خدمة الموقع."
+                    : "تعذر قراءة الموقع. فعّل خدمة الموقع ثم أعد المحاولة.";
+        }
+        finally
+        {
+            _locBusy = false;
+        }
+    }
 
     private void OnNameInput(ChangeEventArgs e) =>
         _name = StoreSafeText.PersonName(e.Value?.ToString());
-
-    private void OnAddressSanitize() => _address = StoreSafeText.Address(_address);
     private void OnOrderNoteSanitize() => _orderNote = StoreSafeText.Note(_orderNote);
 
     private void OnPhoneKeyDown(KeyboardEventArgs e) { }
@@ -248,9 +315,9 @@ else
             _error = "رقم الهاتف يجب أن يكون 09 متبوعاً بثمانية أرقام.";
             return;
         }
-        if (_fulfillment == "delivery" && string.IsNullOrWhiteSpace(_address))
+        if (_fulfillment == 1 && string.IsNullOrWhiteSpace(_customerLoc))
         {
-            _error = "عنوان التوصيل إلزامي.";
+            _error = "طلب التوصيل يتطلب موقعك الحالي. اضغط «تحديد موقعي الحالي» واسمح بالصلاحية.";
             return;
         }
         if (_paymentId <= 0)
@@ -268,7 +335,7 @@ else
                 CustomerName = StoreSafeText.PersonName(_name),
                 Phone = _phone.Trim(),
                 Fulfillment = _fulfillment,
-                Address = _fulfillment == "delivery" ? StoreSafeText.Address(_address) : null,
+                Address = _fulfillment == 1 ? _customerLoc : null,
                 OrderNote = StoreSafeText.Note(_orderNote),
                 PaymentId = _paymentId,
                 Lines = Bag.Lines.Select(l => new SubmitOrderLine
@@ -322,6 +389,15 @@ else
         while (!ct.IsCancellationRequested && _lock is not null && !string.IsNullOrWhiteSpace(_slug))
         {
             var st = await Api.StatusAsync(_slug, _lock.OrderId, _lock.Token, ct);
+            if (st is null && DateTime.UtcNow > _lock.ExpiresAtUtc.AddSeconds(30))
+            {
+                _outcome = "timeout";
+                _statusText = "أُلغي الطلب لعدم رد الكاشير";
+                await Locks.ClearAsync(_slug);
+                _lock = null;
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
             if (st is not null)
             {
                 _statusText = st.Status switch

@@ -120,6 +120,7 @@ public sealed class StoreApiClient
                     resolved.PrimaryColor = StoreBrandCss.NormalizeHex(b.PrimaryColor);
                     resolved.HasLogo = b.HasLogo;
                     resolved.DiscountPercent = b.DiscountPercent;
+                    resolved.MapText = b.MapText ?? "";
                     if (b.HasLogo)
                         resolved.LogoUrl = LogoUrl(slug);
                 }

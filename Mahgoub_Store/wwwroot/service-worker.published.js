@@ -1,48 +1,29 @@
-// Network-first PWA: live POS must not be served from a stale HTML/JSON cache.
+// يخزّن ملفات التشغيل فقط. لا يخزّن الإعدادات ولا واجهة الطلبات ولا HTML.
 self.importScripts('./service-worker-assets.js');
-self.addEventListener('install', event => event.waitUntil(onInstall(event)));
-self.addEventListener('activate', event => event.waitUntil(onActivate(event)));
+self.addEventListener('install', event => event.waitUntil(onInstall()));
+self.addEventListener('activate', event => event.waitUntil(onActivate()));
 self.addEventListener('fetch', event => event.respondWith(onFetch(event)));
 
-const cacheNamePrefix = 'mahgoub-store-v2-';
-const cacheName = `${cacheNamePrefix}${self.assetsManifest.version}`;
-const offlineAssetsInclude = [ /\.dll$/, /\.pdb$/, /\.wasm/, /\.html$/, /\.js$/, /\.css$/, /\.woff$/, /\.png$/, /\.jpe?g$/, /\.gif$/, /\.ico$/, /\.svg$/, /\.blat$/, /\.dat$/ ];
-const offlineAssetsExclude = [
-    /^service-worker\.js$/,
-    /^service-worker-assets\.js$/,
-    /^_redirects$/,
-    /^_headers$/,
-    /^_routes\.json$/
-];
-
-const base = "/";
-const baseUrl = new URL(base, self.origin);
+const cacheName = 'mahgoub-store-shell-v3';
+const shell = /\.(wasm|dll|dat|blat|pdb|css|woff2?|svg|png|jpe?g|webp|ico|js)$/i;
 
 async function onInstall() {
     self.skipWaiting();
-    const assetsRequests = self.assetsManifest.assets
-        .filter(asset => offlineAssetsInclude.some(pattern => pattern.test(asset.url)))
-        .filter(asset => !offlineAssetsExclude.some(pattern => pattern.test(asset.url)))
-        .filter(asset => !asset.url.includes('appsettings'))
-        .map(asset => new Request(asset.url, { cache: 'no-cache' }));
-    const cache = await caches.open(cacheName);
-    for (const req of assetsRequests) {
-        try {
-            const resp = await fetch(req);
-            if (resp.ok) await cache.put(req, resp);
-        } catch {
-            /* أصل واحد فاشل لا يُسقط التثبيت كله */
-        }
-    }
 }
 
 async function onActivate() {
-    const cacheKeys = await caches.keys();
-    await Promise.all(
-        cacheKeys
-            .filter(key => key !== cacheName)
-            .map(key => caches.delete(key)));
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(key => key !== cacheName).map(key => caches.delete(key)));
     await self.clients.claim();
+}
+
+function isShell(url) {
+    if (url.origin !== self.origin)
+        return false;
+    const path = url.pathname;
+    if (path.startsWith('/api/') || path.includes('appsettings') || path.endsWith('.json') || path.endsWith('.html'))
+        return false;
+    return shell.test(path);
 }
 
 async function onFetch(event) {
@@ -51,33 +32,16 @@ async function onFetch(event) {
         return fetch(req);
 
     const url = new URL(req.url);
-    if (url.origin === self.origin && url.pathname.startsWith('/api/'))
+    if (!isShell(url))
         return fetch(req);
 
-    if (req.mode === 'navigate') {
-        try {
-            const fresh = await fetch(req);
-            if (fresh.ok) {
-                const cache = await caches.open(cacheName);
-                await cache.put('index.html', fresh.clone());
-            }
-            return fresh;
-        } catch {
-            const cache = await caches.open(cacheName);
-            return (await cache.match('index.html')) || Response.error();
-        }
-    }
-
+    const cache = await caches.open(cacheName);
     try {
         const fresh = await fetch(req);
-        if (fresh.ok && url.origin === self.origin) {
-            const cache = await caches.open(cacheName);
+        if (fresh.ok)
             await cache.put(req, fresh.clone());
-        }
         return fresh;
     } catch {
-        const cache = await caches.open(cacheName);
-        const cached = await cache.match(req);
-        return cached || Response.error();
+        return (await cache.match(req)) || Response.error();
     }
 }

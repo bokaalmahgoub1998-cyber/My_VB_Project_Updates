@@ -422,6 +422,36 @@ a.seg__btn {
     border-color: var(--brand-fill) !important;
 }
 
+.branch-card, .loc-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 12px 0 4px;
+    padding: 12px;
+    border: 1px solid var(--line, #e5e7eb);
+    border-radius: 16px;
+    background: #fff;
+}
+.loc-card { display: block; }
+.loc-card__msg { margin: 0 0 10px; color: var(--text); font-weight: 700; line-height: 1.6; }
+.loc-card__ok { margin: 10px 0 0; color: #067647; font-weight: 800; }
+.map-pin {
+    flex: 0 0 auto;
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
+    display: grid;
+    place-items: center;
+    background: var(--brand-fill);
+    color: var(--on-brand, #fff);
+    text-decoration: none;
+    box-shadow: 0 8px 18px rgba(17, 24, 39, 0.12);
+}
+.map-pin svg { width: 28px; height: 28px; }
+.branch-card__body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.branch-card__k { color: var(--muted); font-size: 0.82rem; font-weight: 700; }
+.branch-card__v { color: var(--text); font-weight: 800; line-height: 1.5; }
+
 .muted { color: var(--muted); opacity: 0.9; }
 .line--bad { background: #fff5f5; border-radius: 12px; padding: 12px 8px; }
 .line__warn {
