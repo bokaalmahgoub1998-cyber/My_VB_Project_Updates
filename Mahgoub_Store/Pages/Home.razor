@@ -166,29 +166,33 @@ else
             return;
         }
 
-        var boot = await Api.BootstrapAsync(_slug);
+        await Cache.RestoreAsync(_slug);
+        if (Cache.HasItems && Cache.Catalog is not null)
+        {
+            _catalog = Cache.Catalog;
+            _title = string.IsNullOrWhiteSpace(Brand.Current?.Name) ? _title : Brand.Current!.Name;
+            _loading = false;
+            _ = ConfirmStoreAsync(fetchPage: false);
+            return;
+        }
+
+        await ConfirmStoreAsync(fetchPage: true);
+    }
+
+    private async Task ConfirmStoreAsync(bool fetchPage)
+    {
+        var boot = await Api.BootstrapAsync(_slug!);
         if (boot is null || !boot.Available)
         {
             _blocked = boot?.Message ?? "هذا المتجر غير متاح حالياً، يرجى الزيارة لاحقاً";
             _loading = false;
+            await InvokeAsync(StateHasChanged);
             return;
         }
 
         _title = boot.Name;
-
-        if (Cache.HasItems && Cache.Catalog is not null)
-        {
-            _catalog = Cache.Catalog;
-            _loading = false;
-            return;
-        }
-
-        if (!await LoadPageAsync(0))
-        {
+        if (fetchPage && !Cache.HasItems && !await LoadPageAsync(0))
             _blocked = "المتجر غير متاح حالياً، يرجى الزيارة لاحقاً";
-            _loading = false;
-            return;
-        }
 
         if (_catalog.DiscountPercent > 0 && Brand.Current is { Available: true } live)
         {
@@ -197,6 +201,7 @@ else
         }
 
         _loading = false;
+        await InvokeAsync(StateHasChanged);
     }
 
     private ElementReference _more;
@@ -215,6 +220,8 @@ else
                 return false;
             Cache.Merge(page);
             _catalog = Cache.Catalog ?? page;
+            if (!string.IsNullOrWhiteSpace(_slug))
+                await Cache.PersistAsync(_slug);
             return page.Items.Count > 0 || page.Total == 0;
         }
         finally

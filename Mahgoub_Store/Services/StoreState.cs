@@ -126,9 +126,51 @@ public sealed class OrderLockService
 
 public sealed class MenuCacheService
 {
+    private readonly IJSRuntime _js;
+    private static readonly System.Text.Json.JsonSerializerOptions Json = new()
+    {
+        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true
+    };
+
+    public MenuCacheService(IJSRuntime js) => _js = js;
+
     public StoreCatalogDto? Catalog { get; private set; }
     public bool HasItems => Catalog?.Items.Count > 0;
-    public bool IsComplete => Catalog is not null && Catalog.Total >= 0 && Catalog.Items.Count >= Catalog.Total;
+    public bool IsComplete => Catalog is not null && Catalog.Total > 0 && Catalog.Items.Count >= Catalog.Total;
+
+    private static string Key(string slug) => "mahgoub.catalog." + slug;
+
+    public async Task RestoreAsync(string slug)
+    {
+        if (HasItems || string.IsNullOrWhiteSpace(slug))
+            return;
+        try
+        {
+            string? json = await _js.InvokeAsync<string?>("sessionStorage.getItem", Key(slug));
+            if (string.IsNullOrWhiteSpace(json))
+                return;
+            Catalog = System.Text.Json.JsonSerializer.Deserialize<StoreCatalogDto>(json, Json);
+        }
+        catch
+        {
+            Catalog = null;
+        }
+    }
+
+    public async Task PersistAsync(string slug)
+    {
+        if (Catalog is null || string.IsNullOrWhiteSpace(slug))
+            return;
+        try
+        {
+            await _js.InvokeVoidAsync("sessionStorage.setItem", Key(slug), System.Text.Json.JsonSerializer.Serialize(Catalog, Json));
+        }
+        catch
+        {
+            /* الجلسة ممتلئة — الذاكرة تبقى */
+        }
+    }
 
     public void Merge(StoreCatalogDto page)
     {

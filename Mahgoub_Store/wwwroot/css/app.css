@@ -84,8 +84,18 @@ button, input, select, textarea {
     flex-shrink: 0;
 }
 
-.cart-chip__icon { display: grid; }
-.cart-chip__icon svg { width: 16px; height: 16px; display: block; }
+.cart-chip__svg {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    display: block;
+}
+
+.cart-chip__label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+}
 
 .cart-chip__count {
     background: #fff;
@@ -301,22 +311,29 @@ a.seg__btn {
     margin-bottom: 8px;
 }
 
-.panel__head h1 { margin: 0; font-size: 1rem; font-weight: 800; }
+.panel__head h1,
+.cart-title {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
 
 .panel__head .btn-menu {
     width: auto;
-    min-height: 28px;
-    padding: 2px 10px;
+    min-height: 32px;
+    padding: 4px 12px;
     font-size: 0.75rem;
     font-weight: 700;
-    border-radius: 999px;
-    border: 1px solid var(--line);
-    background: #fff;
-    color: var(--text);
+    border-radius: 10px;
+    border: 0;
+    background: var(--brand-fill);
+    color: #fff;
     text-decoration: none;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    line-height: 1.2;
 }
 
 .line__info { flex: 1; min-width: 0; color: var(--text); }

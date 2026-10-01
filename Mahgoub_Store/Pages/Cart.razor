@@ -49,8 +49,8 @@ else
     <div class="checkout">
         <section class="panel">
             <div class="panel__head">
-                <h1>السلة</h1>
-                <a class="btn-menu" href="@Host.HomeUrl()">الأصناف</a>
+                <h1 class="cart-title">السلة</h1>
+                <a class="btn-menu" href="@Host.HomeUrl()">قائمة الأصناف</a>
             </div>
             @if (Bag.Lines.Count == 0)
             {
@@ -217,6 +217,7 @@ else
         Brand.Changed += OnBrandPlace;
         ApplyPlace(Brand.Current);
         _slug = Host.ResolveSlug();
+        RememberLogo(Brand.Current);
         _ = TenantSlug;
         if (string.IsNullOrWhiteSpace(_slug))
         {
@@ -231,7 +232,7 @@ else
             return;
         }
 
-        _logoSrc = boot.HasLogo ? Api.LogoUrl(_slug) : null;
+        RememberLogo(boot);
         ApplyPlace(boot);
         _payments = await Api.PaymentsAsync(_slug);
         if (_payments.Count > 0)
@@ -249,9 +250,16 @@ else
 
     private void OnBrandPlace() => InvokeAsync(() =>
     {
+        RememberLogo(Brand.Current);
         ApplyPlace(Brand.Current);
         StateHasChanged();
     });
+
+    private void RememberLogo(StoreBootstrapDto? boot)
+    {
+        if (boot?.HasLogo == true && !string.IsNullOrWhiteSpace(_slug))
+            _logoSrc = Api.LogoUrl(_slug);
+    }
 
     private void ApplyPlace(StoreBootstrapDto? boot)
     {
@@ -314,7 +322,7 @@ else
             _locMsg = value switch
             {
                 "insecure" => "افتح الموقع عبر الاتصال الآمن.",
-                "denied" => "لم يُسمح بالموقع.",
+                "denied" => "اسمح بالموقع لهذا الموقع من إعدادات المتصفح ثم أعد الضغط.",
                 "off" => "شغّل الموقع من إعدادات الهاتف.",
                 "unsupported" => "الموقع غير متاح على هذا الجهاز.",
                 _ => "تعذر تحديد الموقع."

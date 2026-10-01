@@ -16,6 +16,7 @@ public sealed class StoreApiClient
     private string _tunnel = "";
     private string _slug = "";
     private string _device = "";
+    private string? _logoOnce;
 
     private readonly StoreBrandHub _brand;
     private StoreBootstrapDto? _cached;
@@ -48,9 +49,12 @@ public sealed class StoreApiClient
     public string LogoUrl(string slug)
     {
         _ = slug;
-        if (!IsLocalHost() && !string.IsNullOrWhiteSpace(_slug))
-            return EdgeUrl("api/webstore/logo") + $"?v={DateTime.UtcNow.Ticks}";
-        return $"{_tunnel}/api/webstore/logo?v={DateTime.UtcNow.Ticks}";
+        if (!string.IsNullOrEmpty(_logoOnce))
+            return _logoOnce;
+        _logoOnce = !IsLocalHost() && !string.IsNullOrWhiteSpace(_slug)
+            ? EdgeUrl("api/webstore/logo")
+            : $"{_tunnel}/api/webstore/logo";
+        return _logoOnce;
     }
 
     private string Abs(string relative) =>

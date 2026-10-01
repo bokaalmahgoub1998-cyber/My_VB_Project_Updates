@@ -59,20 +59,28 @@
             bind: function (btn, dotnet) {
                 if (!btn || btn.dataset.geoBound === "1") return;
                 btn.dataset.geoBound = "1";
-                btn.addEventListener("click", function () {
-                    if (btn.disabled) return;
+                btn.addEventListener("click", function (ev) {
+                    ev.preventDefault();
+                    ev.stopPropagation();
                     if (!window.isSecureContext) { dotnet.invokeMethodAsync("OnGeo", "insecure"); return; }
                     if (!navigator.geolocation) { dotnet.invokeMethodAsync("OnGeo", "unsupported"); return; }
-                    navigator.geolocation.getCurrentPosition(function (pos) {
+                    function send(pos) {
                         var lat = Number(pos.coords.latitude);
                         var lng = Number(pos.coords.longitude);
                         if (!isFinite(lat) || !isFinite(lng)) { dotnet.invokeMethodAsync("OnGeo", "failed"); return; }
                         dotnet.invokeMethodAsync("OnGeo", "https://maps.google.com/?q=" + lat.toFixed(6) + "," + lng.toFixed(6));
-                    }, function (err) {
+                    }
+                    function fail(err) {
                         var code = err && err.code;
                         dotnet.invokeMethodAsync("OnGeo", code === 1 ? "denied" : code === 2 ? "off" : "failed");
-                    }, { enableHighAccuracy: true, timeout: 25000, maximumAge: 0 });
-                    setTimeout(function () { dotnet.invokeMethodAsync("OnGeo", "busy"); }, 0);
+                    }
+                    navigator.geolocation.getCurrentPosition(send, function (err) {
+                        if (err && err.code === 2) {
+                            navigator.geolocation.getCurrentPosition(send, fail, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+                            return;
+                        }
+                        fail(err);
+                    }, { enableHighAccuracy: false, timeout: 20000, maximumAge: 0 });
                 });
             }
         };
