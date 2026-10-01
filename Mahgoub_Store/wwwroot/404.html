@@ -55,6 +55,38 @@
                 t.dispatchEvent(new Event("input", { bubbles: true }));
             }, true);
         })();
+        window.mahgoubGeo = {
+            _pending: null,
+            arm: function () {
+                if (this._pending) return this._pending;
+                this._pending = new Promise(function (resolve, reject) {
+                    if (!window.isSecureContext) { reject("insecure"); return; }
+                    if (!navigator.geolocation) { reject("unsupported"); return; }
+                    navigator.geolocation.getCurrentPosition(function (pos) {
+                        var lat = Number(pos.coords.latitude);
+                        var lng = Number(pos.coords.longitude);
+                        if (!isFinite(lat) || !isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+                            reject("failed");
+                            return;
+                        }
+                        resolve("https://maps.google.com/?q=" + lat.toFixed(6) + "," + lng.toFixed(6));
+                    }, function (err) {
+                        reject(err && err.code === 1 ? "denied" : "failed");
+                    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+                });
+                return this._pending;
+            },
+            locate: function () {
+                var p = this._pending || this.arm();
+                this._pending = null;
+                return p;
+            }
+        };
+        document.addEventListener("click", function (e) {
+            var t = e.target;
+            if (!t || !t.closest || !t.closest("[data-mahgoub-geo]")) return;
+            window.mahgoubGeo.arm();
+        }, true);
     </script>
     <script>
         navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' }).then(function (reg) {

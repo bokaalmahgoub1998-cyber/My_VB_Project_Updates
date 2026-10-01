@@ -51,7 +51,7 @@ else
                 <div class="card__media">
                     @if (item.HasImage && !string.IsNullOrWhiteSpace(_slug))
                     {
-                        <img src="@Api.ImageUrl(_slug, item.Id)" alt="@item.Name" loading="lazy" />
+                        <img src="@Api.ImageUrl(_slug, item.Id)" alt="@item.Name" loading="lazy" decoding="async" />
                     }
                 </div>
                 <div class="card__body">

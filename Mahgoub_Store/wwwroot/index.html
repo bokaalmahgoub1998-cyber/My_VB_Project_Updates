@@ -56,8 +56,11 @@
             }, true);
         })();
         window.mahgoubGeo = {
-            locate: function () {
-                return new Promise(function (resolve, reject) {
+            _pending: null,
+            arm: function () {
+                if (this._pending) return this._pending;
+                this._pending = new Promise(function (resolve, reject) {
+                    if (!window.isSecureContext) { reject("insecure"); return; }
                     if (!navigator.geolocation) { reject("unsupported"); return; }
                     navigator.geolocation.getCurrentPosition(function (pos) {
                         var lat = Number(pos.coords.latitude);
@@ -71,8 +74,19 @@
                         reject(err && err.code === 1 ? "denied" : "failed");
                     }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
                 });
+                return this._pending;
+            },
+            locate: function () {
+                var p = this._pending || this.arm();
+                this._pending = null;
+                return p;
             }
         };
+        document.addEventListener("click", function (e) {
+            var t = e.target;
+            if (!t || !t.closest || !t.closest("[data-mahgoub-geo]")) return;
+            window.mahgoubGeo.arm();
+        }, true);
     </script>
     <script>
         navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' }).then(function (reg) {

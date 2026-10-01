@@ -139,7 +139,7 @@ else
                 {
                     <div class="loc-card">
                         <p class="loc-card__msg">لا يمكن إرسال الطلب قبل تحديد موقعك.</p>
-                        <button type="button" class="btn btn--block" disabled="@_locBusy" @onclick="CaptureLocationAsync">
+                        <button type="button" class="btn btn--block" data-mahgoub-geo disabled="@_locBusy" @onclick="CaptureLocationAsync">
                             @(_locBusy ? "جاري تحديد الموقع…" : "تحديد موقعي الحالي")
                         </button>
                         @if (!string.IsNullOrWhiteSpace(_locMsg))
@@ -287,11 +287,13 @@ else
         {
             _customerLoc = null;
             string msg = ex.Message ?? "";
-            _locMsg = msg.Contains("denied", StringComparison.OrdinalIgnoreCase)
-                ? "لم يُسمح بالموقع."
-                : msg.Contains("unsupported", StringComparison.OrdinalIgnoreCase)
-                    ? "الموقع غير متاح على هذا الجهاز."
-                    : "تعذر تحديد الموقع.";
+            _locMsg = msg.Contains("insecure", StringComparison.OrdinalIgnoreCase)
+                ? "افتح الموقع عبر الاتصال الآمن."
+                : msg.Contains("denied", StringComparison.OrdinalIgnoreCase)
+                    ? "لم يُسمح بالموقع."
+                    : msg.Contains("unsupported", StringComparison.OrdinalIgnoreCase)
+                        ? "الموقع غير متاح على هذا الجهاز."
+                        : "تعذر تحديد الموقع.";
         }
         finally
         {
