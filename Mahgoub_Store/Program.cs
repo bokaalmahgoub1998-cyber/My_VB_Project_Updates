@@ -15,6 +15,7 @@ builder.Services.AddScoped<DeviceFingerprintService>();
 builder.Services.AddSingleton<CartService>();
 builder.Services.AddScoped<OrderLockService>();
 builder.Services.AddSingleton<MenuCacheService>();
+builder.Services.AddSingleton<StoreRunGate>();
 builder.Services.AddScoped(_ => new HttpClient { Timeout = TimeSpan.FromSeconds(20) });
 
 await builder.Build().RunAsync();

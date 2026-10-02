@@ -9,6 +9,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject StoreBrandHub Brand
+@inject StoreRunGate Run
 
 <PageTitle>السلة</PageTitle>
 
@@ -139,7 +140,7 @@ else
                 {
                     <div class="loc-card">
                         <p class="loc-card__msg">لا يمكن إرسال الطلب قبل تحديد موقعك.</p>
-                        <button type="button" class="btn btn--block" @ref="_geoBtn" disabled="@_locBusy">
+                        <button type="button" class="btn btn--block" @ref="_geoBtn">
                             @(_locBusy ? "جاري تحديد الموقع…" : "تحديد موقعي الحالي")
                         </button>
                         @if (!string.IsNullOrWhiteSpace(_locMsg))
@@ -225,8 +226,9 @@ else
             return;
         }
 
-        var boot = await Api.BootstrapAsync(_slug);
-        if (boot is null || !boot.Available)
+        await Api.EnsureSessionAsync(_slug);
+        var boot = Brand.Current;
+        if (boot is not { Available: true })
         {
             _blocked = boot?.Message ?? "هذا المتجر غير متاح حالياً، يرجى الزيارة لاحقاً";
             return;
@@ -234,7 +236,7 @@ else
 
         RememberLogo(boot);
         ApplyPlace(boot);
-        _payments = await Api.PaymentsAsync(_slug);
+        _payments = Api.SessionPayments.ToList();
         if (_payments.Count > 0)
             _paymentId = _payments[0].Id;
 
@@ -322,8 +324,8 @@ else
             _locMsg = value switch
             {
                 "insecure" => "افتح الموقع عبر الاتصال الآمن.",
-                "denied" => "اسمح بالموقع لهذا الموقع من إعدادات المتصفح ثم أعد الضغط.",
-                "off" => "شغّل الموقع من إعدادات الهاتف.",
+                "denied" => "فعّل الموقع لهذا الموقع من إعدادات المتصفح ثم أعد الضغط.",
+                "off" => "فعّل خدمة الموقع في الهاتف ثم أعد الضغط.",
                 "unsupported" => "الموقع غير متاح على هذا الجهاز.",
                 _ => "تعذر تحديد الموقع."
             };
@@ -379,6 +381,7 @@ else
 
         _busy = true;
         _submitLabel = "جاري الإرسال…";
+        Run.Start();
         try
         {
             var req = new SubmitOrderRequest
@@ -428,6 +431,7 @@ else
         }
         finally
         {
+            Run.Stop();
             _busy = false;
             _submitLabel = "إرسال الطلب";
         }

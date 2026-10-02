@@ -30,6 +30,24 @@ button, input, select, textarea {
     background: var(--bg);
 }
 
+.store-shell.is-running {
+    pointer-events: none;
+}
+
+.run-veil {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 23, 42, 0.46);
+    color: #fff;
+    font-size: 1.05rem;
+    font-weight: 700;
+    pointer-events: auto;
+}
+
 .store-header {
     position: sticky;
     top: 0;

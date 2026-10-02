@@ -4,9 +4,10 @@
 @inject StoreApiClient Api
 @inject CartService Cart
 @inject StoreBrandHub Brand
+@inject StoreRunGate Run
 @inject NavigationManager Nav
 
-<div class="store-shell" style="@BrandStyle">
+<div class="store-shell @(Run.IsRunning ? "is-running" : null)" style="@BrandStyle">
     <header class="store-header">
         <a class="brand" href="@HomeHref">
             @if (!string.IsNullOrWhiteSpace(_logoSrc))
@@ -33,6 +34,10 @@
     <main class="store-main">
         @Body
     </main>
+    @if (Run.IsRunning)
+    {
+        <div class="run-veil" role="status" aria-live="polite">جاري إرسال الطلب…</div>
+    }
 </div>
 
 @code {
@@ -49,6 +54,7 @@
     {
         Cart.Changed += OnCart;
         Brand.Changed += OnBrand;
+        Run.Changed += OnRun;
         _slug = Host.ResolveSlug();
         if (string.IsNullOrWhiteSpace(_slug))
         {
@@ -58,8 +64,10 @@
 
         if (Brand.Current is not null)
             Apply(Brand.Current);
-        _ = await Api.BootstrapAsync(_slug);
+        await Api.EnsureSessionAsync(_slug);
     }
+
+    private void OnRun() => InvokeAsync(StateHasChanged);
 
     private void OnBrand() => InvokeAsync(() =>
     {
@@ -97,5 +105,6 @@
     {
         Cart.Changed -= OnCart;
         Brand.Changed -= OnBrand;
+        Run.Changed -= OnRun;
     }
 }

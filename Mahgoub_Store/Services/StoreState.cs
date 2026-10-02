@@ -124,6 +124,28 @@ public sealed class OrderLockService
         await _js.InvokeVoidAsync("localStorage.removeItem", Key(slug));
 }
 
+public sealed class StoreRunGate
+{
+    public event Action? Changed;
+    public bool IsRunning { get; private set; }
+
+    public void Start()
+    {
+        if (IsRunning)
+            return;
+        IsRunning = true;
+        Changed?.Invoke();
+    }
+
+    public void Stop()
+    {
+        if (!IsRunning)
+            return;
+        IsRunning = false;
+        Changed?.Invoke();
+    }
+}
+
 public sealed class MenuCacheService
 {
     private readonly IJSRuntime _js;

@@ -59,9 +59,7 @@
             bind: function (btn, dotnet) {
                 if (!btn || btn.dataset.geoBound === "1") return;
                 btn.dataset.geoBound = "1";
-                btn.addEventListener("click", function (ev) {
-                    ev.preventDefault();
-                    ev.stopPropagation();
+                btn.addEventListener("click", function () {
                     if (!window.isSecureContext) { dotnet.invokeMethodAsync("OnGeo", "insecure"); return; }
                     if (!navigator.geolocation) { dotnet.invokeMethodAsync("OnGeo", "unsupported"); return; }
                     function send(pos) {
@@ -80,7 +78,7 @@
                             return;
                         }
                         fail(err);
-                    }, { enableHighAccuracy: false, timeout: 20000, maximumAge: 0 });
+                    }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 0 });
                 });
             }
         };

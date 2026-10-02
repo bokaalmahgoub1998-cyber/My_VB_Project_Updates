@@ -21,7 +21,8 @@ public sealed class StoreApiClient
     private readonly StoreBrandHub _brand;
     private StoreBootstrapDto? _cached;
     private string _cachedSlug = "";
-    private DateTime _cachedAt;
+    private List<StorePaymentDto>? _payments;
+    private readonly SemaphoreSlim _session = new(1, 1);
 
     public StoreApiClient(
         HttpClient http,
@@ -63,8 +64,7 @@ public sealed class StoreApiClient
     public async Task<StoreBootstrapDto?> BootstrapAsync(string slug, CancellationToken ct = default)
     {
         if (string.Equals(_cachedSlug, slug, StringComparison.OrdinalIgnoreCase)
-            && _cached is not null
-            && DateTime.UtcNow - _cachedAt < TimeSpan.FromSeconds(20))
+            && _cached is { Available: true })
             return _cached;
 
         var resolved = await _registry.ResolveAsync(slug, ct);
@@ -144,19 +144,54 @@ public sealed class StoreApiClient
 
     private void Remember(string slug, StoreBootstrapDto dto)
     {
+        if (!string.Equals(_cachedSlug, slug, StringComparison.OrdinalIgnoreCase))
+            _payments = null;
         if (dto.Available)
         {
             _cachedSlug = slug;
             _cached = dto;
-            _cachedAt = DateTime.UtcNow;
         }
         _brand.Publish(dto);
     }
 
-    public async Task<StoreCatalogDto?> CatalogAsync(string slug, int skip = 0, int take = 24, CancellationToken ct = default)
+    public async Task EnsureSessionAsync(string slug, CancellationToken ct = default)
+    {
+        if (string.Equals(_cachedSlug, slug, StringComparison.OrdinalIgnoreCase)
+            && _cached is { Available: true }
+            && _payments is not null)
+            return;
+
+        await _session.WaitAsync(ct);
+        try
+        {
+            if (string.Equals(_cachedSlug, slug, StringComparison.OrdinalIgnoreCase)
+                && _cached is { Available: true }
+                && _payments is not null)
+                return;
+
+            var boot = await BootstrapAsync(slug, ct);
+            if (boot is not { Available: true })
+                return;
+            if (_payments is null)
+                _payments = await LoadPaymentsAsync(slug, ct);
+        }
+        finally
+        {
+            _session.Release();
+        }
+    }
+
+    public IReadOnlyList<StorePaymentDto> SessionPayments => _payments ?? [];
+
+    public async Task<StoreCatalogDto?> CatalogAsync(string slug, int skip = 0, int take = 24, string? q = null, int cat = 0, CancellationToken ct = default)
     {
         await EnsureTunnel(slug, ct);
-        using var resp = await DispatchAsync(HttpMethod.Get, $"api/webstore/catalog?skip={skip}&take={take}", null, ct);
+        var path = $"api/webstore/catalog?skip={skip}&take={take}";
+        if (!string.IsNullOrWhiteSpace(q))
+            path += "&q=" + Uri.EscapeDataString(q.Trim());
+        if (cat > 0)
+            path += "&cat=" + cat.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        using var resp = await DispatchAsync(HttpMethod.Get, path, null, ct);
         if (!resp.IsSuccessStatusCode || IsHtml(resp))
             return null;
         try { return await resp.Content.ReadFromJsonAsync<StoreCatalogDto>(Json, ct); }
@@ -164,6 +199,15 @@ public sealed class StoreApiClient
     }
 
     public async Task<List<StorePaymentDto>> PaymentsAsync(string slug, CancellationToken ct = default)
+    {
+        if (_payments is not null
+            && string.Equals(_cachedSlug, slug, StringComparison.OrdinalIgnoreCase))
+            return _payments;
+        _payments = await LoadPaymentsAsync(slug, ct);
+        return _payments;
+    }
+
+    private async Task<List<StorePaymentDto>> LoadPaymentsAsync(string slug, CancellationToken ct)
     {
         await EnsureTunnel(slug, ct);
         using var resp = await DispatchAsync(HttpMethod.Get, "api/webstore/payments", null, ct);

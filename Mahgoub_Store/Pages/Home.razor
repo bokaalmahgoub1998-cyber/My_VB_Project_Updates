@@ -38,7 +38,11 @@ else
             <button class="chip @( _cat == c.Id ? "chip--on" : null)" @onclick="() => SelectCat(c.Id)">@c.Name</button>
         }
     </section>
-    @if (!VisibleItems.Any())
+    @if (_queryLoading && !VisibleItems.Any())
+    {
+        <EmptyState Title="@_title" ShowBrandLogo="false" Message="جاري البحث…" />
+    }
+    else if (!VisibleItems.Any())
     {
         <EmptyState Title="@_title"
                     ShowBrandLogo="false"
@@ -83,7 +87,7 @@ else
         }
     </section>
     }
-    @if (!Cache.IsComplete)
+    @if (MoreAvailable)
     {
         <div class="more-sentinel" @ref="_more"></div>
     }
@@ -99,40 +103,47 @@ else
     private int _cat;
     private string _q = "";
     private StoreCatalogDto _catalog = new();
+    private StoreCatalogDto? _query;
+    private bool _queryLoading;
+    private int _queryGen;
+    private CancellationTokenSource? _searchCts;
     private readonly Dictionary<int, int> _qty = new();
     private readonly Dictionary<int, string> _note = new();
 
-    private IEnumerable<StoreItemDto> VisibleItems
-    {
-        get
-        {
-            IEnumerable<StoreItemDto> items;
-            string q = _q.Trim();
-            if (q.Length > 0)
-                items = _catalog.Items.Where(i => (i.Name ?? "").Contains(q, StringComparison.OrdinalIgnoreCase));
-            else if (_cat == 0)
-                items = _catalog.Items;
-            else
-                items = _catalog.Items.Where(i => i.CategoryId == _cat);
-            return items;
-        }
-    }
+    private bool UseQuery => _q.Trim().Length > 0 || _cat != 0;
+
+    private IEnumerable<StoreItemDto> VisibleItems =>
+        UseQuery ? (_query?.Items ?? []) : _catalog.Items;
+
+    private bool MoreAvailable =>
+        UseQuery
+            ? _query is not null && _query.Items.Count < _query.Total
+            : !Cache.IsComplete;
 
     private int QtyOf(int id) => _qty.TryGetValue(id, out var q) ? q : 1;
     private string NoteOf(int id) => _note.TryGetValue(id, out var n) ? n : "";
 
-    private void SelectCat(int id)
+    private async Task SelectCat(int id)
     {
         _cat = id;
-        if (id != 0)
-            _ = EnsureRestAsync();
+        _query = null;
+        if (!UseQuery)
+            return;
+        await LoadQueryAsync(reset: true);
     }
 
-    private void OnSearch(ChangeEventArgs e)
+    private async Task OnSearch(ChangeEventArgs e)
     {
         _q = e.Value?.ToString() ?? "";
-        if (_q.Trim().Length > 0)
-            _ = EnsureRestAsync();
+        _searchCts?.Cancel();
+        _searchCts = new CancellationTokenSource();
+        var token = _searchCts.Token;
+        try { await Task.Delay(280, token); }
+        catch (OperationCanceledException) { return; }
+        _query = null;
+        if (!UseQuery)
+            return;
+        await LoadQueryAsync(reset: true);
     }
 
     private void Plus(int id) => _qty[id] = Math.Clamp(QtyOf(id) + 1, 1, 99);
@@ -181,8 +192,9 @@ else
 
     private async Task ConfirmStoreAsync(bool fetchPage)
     {
-        var boot = await Api.BootstrapAsync(_slug!);
-        if (boot is null || !boot.Available)
+        await Api.EnsureSessionAsync(_slug!);
+        var boot = Brand.Current;
+        if (boot is not { Available: true })
         {
             _blocked = boot?.Message ?? "هذا المتجر غير متاح حالياً، يرجى الزيارة لاحقاً";
             _loading = false;
@@ -230,33 +242,63 @@ else
         }
     }
 
-    private async Task EnsureRestAsync()
+    private async Task LoadQueryAsync(bool reset)
     {
-        if (Cache.IsComplete || _loadingMore)
+        if (string.IsNullOrWhiteSpace(_slug) || !UseQuery)
             return;
-        while (!Cache.IsComplete && _catalog.Items.Count < Math.Max(_catalog.Total, 1))
+        if (!reset && _queryLoading)
+            return;
+        int gen = ++_queryGen;
+        int skip = reset || _query is null ? 0 : _query.Items.Count;
+        _queryLoading = true;
+        try
         {
-            int before = _catalog.Items.Count;
-            if (!await LoadPageAsync(before))
-                break;
-            if (_catalog.Items.Count == before)
-                break;
-            await InvokeAsync(StateHasChanged);
+            var page = await Api.CatalogAsync(_slug, skip, 24, _q.Trim(), _cat);
+            if (gen != _queryGen || page is null)
+                return;
+            if (reset || _query is null)
+                _query = page;
+            else
+            {
+                var ids = _query.Items.Select(i => i.Id).ToHashSet();
+                foreach (var item in page.Items)
+                {
+                    if (ids.Add(item.Id))
+                        _query.Items.Add(item);
+                }
+                _query.Total = page.Total;
+            }
+        }
+        finally
+        {
+            if (gen == _queryGen)
+                _queryLoading = false;
         }
     }
 
     [JSInvokable]
     public async Task LoadMore()
     {
-        if (Cache.IsComplete || _loadingMore || _loading)
+        if (_loadingMore || _queryLoading || _loading)
             return;
-        if (await LoadPageAsync(_catalog.Items.Count))
-            await InvokeAsync(StateHasChanged);
+        if (UseQuery)
+        {
+            if (_query is null || _query.Items.Count >= _query.Total)
+                return;
+            await LoadQueryAsync(reset: false);
+        }
+        else
+        {
+            if (Cache.IsComplete)
+                return;
+            await LoadPageAsync(_catalog.Items.Count);
+        }
+        await InvokeAsync(StateHasChanged);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (Cache.IsComplete || _loading || !string.IsNullOrWhiteSpace(_blocked))
+        if (!MoreAvailable || _loading || !string.IsNullOrWhiteSpace(_blocked))
             return;
         _self ??= DotNetObjectReference.Create(this);
         try
@@ -269,5 +311,10 @@ else
         }
     }
 
-    public void Dispose() => _self?.Dispose();
+    public void Dispose()
+    {
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        _self?.Dispose();
+    }
 }
