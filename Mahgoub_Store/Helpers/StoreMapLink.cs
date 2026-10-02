@@ -13,14 +13,14 @@ public static class StoreMapLink
         return "https://www.google.com/maps/search/?api=1&query=" + Uri.EscapeDataString(t);
     }
 
-    public static string Label(string? raw)
+    public static string Label(string? raw, bool restaurant)
     {
         string t = (raw ?? "").Trim();
         if (t.Length == 0)
             return "";
         if (t.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
             || t.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            return "موقع المتجر على خرائط جوجل";
+            return restaurant ? "موقع المطعم على خرائط جوجل" : "موقع المتجر على خرائط جوجل";
         return t;
     }
 }

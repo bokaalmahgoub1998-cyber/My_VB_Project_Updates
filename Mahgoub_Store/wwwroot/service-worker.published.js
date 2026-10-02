@@ -3,8 +3,18 @@ self.importScripts('./service-worker-assets.js');
 self.addEventListener('install', event => event.waitUntil(onInstall()));
 self.addEventListener('activate', event => event.waitUntil(onActivate()));
 self.addEventListener('fetch', event => event.respondWith(onFetch(event)));
+self.addEventListener('notificationclick', event => {
+    event.notification.close();
+    event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+        for (const client of list) {
+            if ('focus' in client)
+                return client.focus();
+        }
+        return self.clients.openWindow('./');
+    }));
+});
 
-const cacheName = 'mahgoub-store-shell-v3';
+const cacheName = 'mahgoub-store-shell-v4';
 const shell = /\.(wasm|dll|dat|blat|pdb|css|woff2?|svg|png|jpe?g|webp|ico|js)$/i;
 
 async function onInstall() {
@@ -22,6 +32,8 @@ function isShell(url) {
         return false;
     const path = url.pathname;
     if (path.startsWith('/api/') || path.includes('appsettings') || path.endsWith('.json') || path.endsWith('.html'))
+        return false;
+    if (path.endsWith('/service-worker.js') || path.endsWith('/device.js'))
         return false;
     return shell.test(path);
 }

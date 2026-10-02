@@ -108,6 +108,7 @@ public sealed class OrderStatusDto
     public string Status { get; set; } = "";
     public string? Message { get; set; }
     public int? InvoiceNo { get; set; }
+    public string? OrderNo { get; set; }
 }
 
 public sealed class LockedOrderState

@@ -24,6 +24,10 @@ else if (_lock is not null || _outcome is not null)
         {
             <div class="ok-mark" aria-hidden="true">✓</div>
             <h1>تم قبول طلبك</h1>
+            @if (!string.IsNullOrWhiteSpace(_orderNo))
+            {
+                <p class="order-no">@(_placeRestaurant ? "رقم اليوم" : "رقم الطلب") <strong>@_orderNo</strong></p>
+            }
             <p>جاري تحضيره الآن. شكراً لانتظارك.</p>
         }
         else
@@ -121,11 +125,11 @@ else
                     <button type="button" class="@SegClass(1)" @onclick="() => SetFulfillment(1)">توصيل</button>
                 </div>
 
-                @if (_fulfillment == 0 && !string.IsNullOrWhiteSpace(_storeMapUrl))
+                @if (!string.IsNullOrWhiteSpace(_storeMapUrl))
                 {
                     <div class="branch-card">
                         <a class="map-pin" href="@_storeMapUrl" target="_blank" rel="noopener noreferrer"
-                           aria-label="فتح موقع المتجر على خرائط جوجل">
+                           aria-label="@_placeTitle">
                             <svg viewBox="0 0 24 24" aria-hidden="true">
                                 <path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/>
                             </svg>
@@ -136,7 +140,7 @@ else
                         </div>
                     </div>
                 }
-                else if (_fulfillment == 1)
+                @if (_fulfillment == 1)
                 {
                     <div class="loc-card">
                         <p class="loc-card__msg">لا يمكن إرسال الطلب قبل تحديد موقعك.</p>
@@ -177,7 +181,7 @@ else
                     <p class="error">@_error</p>
                 }
 
-                <button class="btn btn--block" type="button" disabled="@_busy" @onclick="SubmitAsync">@_submitLabel</button>
+                <button class="btn btn--block" type="button" data-send-order="1" disabled="@_busy" @onclick="SubmitAsync">@_submitLabel</button>
             </section>
         }
     </div>
@@ -202,7 +206,10 @@ else
     private string? _logoSrc;
     private string? _storeMapUrl;
     private string _storeMapLabel = "";
-    private string _placeTitle = "عنوان المتجر";
+    private string _placeTitle = "موقع المتجر";
+    private bool _placeRestaurant;
+    private string? _orderNo;
+    private bool _told;
     private string? _customerLoc;
     private string? _locMsg;
     private bool _locBusy;
@@ -267,9 +274,10 @@ else
     {
         if (boot is null || !boot.Available)
             return;
+        _placeRestaurant = boot.Restaurant;
         _storeMapUrl = StoreMapLink.OpenUrl(boot.MapText);
-        _storeMapLabel = StoreMapLink.Label(boot.MapText);
-        _placeTitle = boot.Restaurant ? "عنوان المطعم" : "عنوان المتجر";
+        _storeMapLabel = StoreMapLink.Label(boot.MapText, boot.Restaurant);
+        _placeTitle = boot.Restaurant ? "موقع المطعم" : "موقع المتجر";
     }
 
     private string SegClass(int kind) =>
@@ -324,7 +332,7 @@ else
             _locMsg = value switch
             {
                 "insecure" => "افتح الموقع عبر الاتصال الآمن.",
-                "denied" => "فعّل الموقع لهذا الموقع من إعدادات المتصفح ثم أعد الضغط.",
+                "denied" => "الموقع ممنوع. من أيقونة القفل بجانب العنوان اختر الموقع ثم السماح، ثم أعد الضغط.",
                 "off" => "فعّل خدمة الموقع في الهاتف ثم أعد الضغط.",
                 "unsupported" => "الموقع غير متاح على هذا الجهاز.",
                 _ => "تعذر تحديد الموقع."
@@ -449,6 +457,7 @@ else
             {
                 _outcome = "timeout";
                 _statusText = "أُلغي الطلب لعدم رد الكاشير";
+                await AnnounceAsync("timeout", null);
                 await Locks.ClearAsync(_slug);
                 _lock = null;
                 await InvokeAsync(StateHasChanged);
@@ -469,6 +478,9 @@ else
                 if (st.Status is "accepted" or "rejected" or "timeout")
                 {
                     _outcome = st.Status;
+                    if (st.Status == "accepted")
+                        _orderNo = !string.IsNullOrWhiteSpace(st.OrderNo) ? st.OrderNo : st.InvoiceNo?.ToString();
+                    await AnnounceAsync(st.Status, _orderNo);
                     await Locks.ClearAsync(_slug);
                     _lock = st.Status == "accepted" ? _lock : null;
                     await InvokeAsync(StateHasChanged);
@@ -479,6 +491,35 @@ else
             try { await Task.Delay(2000, ct); }
             catch (TaskCanceledException) { return; }
         }
+    }
+
+    private async Task AnnounceAsync(string status, string? orderNo)
+    {
+        if (_told)
+            return;
+        _told = true;
+        string title;
+        string body;
+        if (status == "accepted")
+        {
+            title = "تم قبول الطلب";
+            body = string.IsNullOrWhiteSpace(orderNo)
+                ? "جاري تحضير طلبك."
+                : (_placeRestaurant ? "رقم اليوم " : "رقم الطلب ") + orderNo;
+        }
+        else if (status == "rejected")
+        {
+            title = "تم رفض الطلب";
+            body = "لم يُقبل الطلب.";
+        }
+        else
+        {
+            title = "أُلغي الطلب";
+            body = "انتهت مهلة الرد.";
+        }
+
+        try { await JS.InvokeVoidAsync("mahgoubNotify.show", title, body); }
+        catch { /* الإشعار اختياري إذا رفض المتصفح الإذن */ }
     }
 
     public void Dispose()
