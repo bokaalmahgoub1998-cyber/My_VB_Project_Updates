@@ -26,7 +26,7 @@ else if (_lock is not null || _outcome is not null)
             <h1>تم قبول طلبك</h1>
             @if (!string.IsNullOrWhiteSpace(_orderNo))
             {
-                <p class="order-no">@(_placeRestaurant ? "رقم اليوم" : "رقم الطلب") <strong>@_orderNo</strong></p>
+                <p class="order-no">رقم الطلب <strong>@_orderNo</strong></p>
             }
             <p>جاري تحضيره الآن. شكراً لانتظارك.</p>
         }
@@ -505,7 +505,7 @@ else
             title = "تم قبول الطلب";
             body = string.IsNullOrWhiteSpace(orderNo)
                 ? "جاري تحضير طلبك."
-                : (_placeRestaurant ? "رقم اليوم " : "رقم الطلب ") + orderNo;
+                : "رقم الطلب " + orderNo;
         }
         else if (status == "rejected")
         {
