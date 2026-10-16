@@ -4,18 +4,10 @@
         catch (e) { return Promise.resolve(); }
     }
 
-    function readGeoPermission() {
-        if (!navigator.permissions || !navigator.permissions.query)
-            return Promise.resolve("prompt");
-        try {
-            return navigator.permissions.query({ name: "geolocation" }).then(function (st) {
-                return (st && st.state) || "prompt";
-            }).catch(function () { return "prompt"; });
-        } catch (e) {
-            return Promise.resolve("prompt");
-        }
-    }
-
+    /**
+     * مهم: getCurrentPosition يُستدعى فوراً داخل ضغطة المستخدم.
+     * أي انتظار (permissions.query) يلغي إيماءة النظام على iOS/Android فلا تظهر شاشة الإذن.
+     */
     function locate(dotnet) {
         tell(dotnet, "busy");
         if (!window.isSecureContext) { tell(dotnet, "insecure"); return; }
@@ -35,60 +27,47 @@
             else tell(dotnet, "failed");
         }
 
-        var opts = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
-        var optsSoft = { enableHighAccuracy: false, timeout: 15000, maximumAge: 0 };
+        var hi = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
+        var soft = { enableHighAccuracy: false, timeout: 16000, maximumAge: 0 };
 
-        // يُستدعى دائماً من ضغطة المستخدم — يطلب الإذن أو يعيد قراءة الموقع.
-        function start() {
-            navigator.geolocation.getCurrentPosition(send, function (err) {
-                if (err && err.code === 2) {
-                    navigator.geolocation.getCurrentPosition(send, fail, optsSoft);
-                    return;
-                }
-                if (err && err.code === 3) {
-                    navigator.geolocation.getCurrentPosition(send, fail, optsSoft);
-                    return;
-                }
-                fail(err);
-            }, opts);
-        }
-
-        readGeoPermission().then(function (state) {
-            if (state === "denied") {
-                // ما زلنا نطلب من الجهاز؛ إن رفض المتصفح يظهر denied.
-                start();
+        navigator.geolocation.getCurrentPosition(send, function (err) {
+            // GPS مطفأ أو مهلة — إعادة طلب بدقة أخرى لتظهر شاشة تشغيل الموقع على أندرويد.
+            if (err && (err.code === 2 || err.code === 3)) {
+                navigator.geolocation.getCurrentPosition(send, fail, soft);
                 return;
             }
-            start();
-        }, start);
+            fail(err);
+        }, hi);
+    }
+
+    function bindButton(btn, dotnet) {
+        if (!btn || !dotnet) return;
+        if (btn._geoRun) {
+            btn.removeEventListener("click", btn._geoRun);
+            btn.removeEventListener("touchend", btn._geoTouch);
+        }
+        var lockUntil = 0;
+        function run() {
+            var now = Date.now();
+            if (now < lockUntil) return;
+            lockUntil = now + 1000;
+            locate(dotnet);
+        }
+        btn._geoRun = run;
+        btn._geoTouch = function () { run(); };
+        btn.addEventListener("click", btn._geoRun);
+        btn.addEventListener("touchend", btn._geoTouch, { passive: true });
     }
 
     window.mahgoubGeo = {
-        bind: function (btn, dotnet) {
-            if (!btn || !dotnet) return;
-            if (btn._geoClick) {
-                btn.removeEventListener("click", btn._geoClick);
-                btn.removeEventListener("touchend", btn._geoTouch);
-            }
-            var lockUntil = 0;
-            function run(ev) {
-                var now = Date.now();
-                if (now < lockUntil) return;
-                lockUntil = now + 900;
-                locate(dotnet);
-            }
-            btn._geoClick = run;
-            btn._geoTouch = function (ev) {
-                // على بعض أجهزة iOS يسبق touchend الـ click؛ ننفّذ مرة واحدة عبر القفل.
-                if (ev && ev.cancelable) { /* لا preventDefault حتى لا يُلغى الإيماء */ }
-                run(ev);
-            };
-            btn.addEventListener("click", btn._geoClick);
-            btn.addEventListener("touchend", btn._geoTouch, { passive: true });
+        bind: bindButton,
+        bindMany: function (buttons, dotnet) {
+            if (!buttons || !dotnet) return;
+            for (var i = 0; i < buttons.length; i++)
+                bindButton(buttons[i], dotnet);
         },
         request: function (dotnet) {
-            if (!dotnet) return;
-            locate(dotnet);
+            if (dotnet) locate(dotnet);
         }
     };
 
@@ -136,7 +115,6 @@
         }
     };
 
-    // طلب الإشعار من إيماءة المستخدم قبل أن يبدأ Blazor الإرسال.
     document.addEventListener("click", function (e) {
         var el = e.target && e.target.closest ? e.target.closest("[data-send-order]") : null;
         if (!el || el.disabled) return;
