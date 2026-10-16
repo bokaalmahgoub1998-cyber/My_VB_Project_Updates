@@ -16,6 +16,8 @@ export async function onRequest(context) {
     const headers = new Headers(index.headers);
     headers.set("content-type", "text/html; charset=utf-8");
     headers.set("cache-control", "no-cache");
+    if (!headers.has("permissions-policy"))
+      headers.set("Permissions-Policy", "geolocation=(self), camera=(), microphone=()");
     return new Response(index.body, { status: 200, headers });
   }
 

@@ -14,7 +14,7 @@ self.addEventListener('notificationclick', event => {
     }));
 });
 
-const cacheName = 'mahgoub-store-shell-v4';
+const cacheName = 'mahgoub-store-shell-v5';
 const shell = /\.(wasm|dll|dat|blat|pdb|css|woff2?|svg|png|jpe?g|webp|ico|js)$/i;
 
 async function onInstall() {

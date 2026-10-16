@@ -147,7 +147,7 @@ else
                         <button type="button" class="btn btn--block" @ref="_geoBtn" aria-busy="@_locBusy">
                             @(_locBusy ? "جاري تحديد الموقع…" : "تحديد موقعي الحالي")
                         </button>
-                        @if (!string.IsNullOrWhiteSpace(_locMsg) && !_showGeoSheet)
+                        @if (!string.IsNullOrWhiteSpace(_locMsg))
                         {
                             <p class="@(_customerLoc is null ? "error" : "loc-card__ok")">@_locMsg</p>
                         }
@@ -187,26 +187,6 @@ else
     </div>
 }
 
-@if (_showGeoSheet)
-{
-    <div class="geo-sheet" role="dialog" aria-modal="true" aria-labelledby="geo-sheet-title">
-        <div class="geo-sheet__card">
-            <div class="geo-sheet__pin" aria-hidden="true">
-                <svg viewBox="0 0 24 24" width="36" height="36">
-                    <path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/>
-                </svg>
-            </div>
-            <h2 id="geo-sheet-title">السماح بالموقع</h2>
-            <p class="geo-sheet__lead">للتوصيل نحتاج موقعك الحالي. اضغط الزر ليظهر طلب الإذن من الهاتف كما في أول زيارة.</p>
-            <p class="geo-sheet__hint">@_geoSheetHint</p>
-            <button type="button" class="btn btn--block" @ref="_geoSheetBtn" aria-busy="@_locBusy">
-                @(_locBusy ? "جاري طلب الموقع…" : "السماح بالموقع")
-            </button>
-            <button type="button" class="geo-sheet__later" @onclick="CloseGeoSheet">لاحقاً</button>
-        </div>
-    </div>
-}
-
 @code {
     [Parameter] public string? TenantSlug { get; set; }
 
@@ -233,11 +213,8 @@ else
     private string? _customerLoc;
     private string? _locMsg;
     private bool _locBusy;
-    private bool _showGeoSheet;
-    private string _geoSheetHint = "";
     private string _addressText = "";
     private ElementReference _geoBtn;
-    private ElementReference _geoSheetBtn;
     private DotNetObjectReference<Cart>? _geoRef;
     private List<StorePaymentDto> _payments = [];
     private CancellationTokenSource? _poll;
@@ -314,46 +291,23 @@ else
         {
             _customerLoc = null;
             _locMsg = null;
-            _showGeoSheet = false;
             _locBusy = false;
         }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_fulfillment != 1 && !_showGeoSheet)
+        if (_fulfillment != 1)
             return;
         _geoRef ??= DotNetObjectReference.Create(this);
         try
         {
-            if (_fulfillment == 1)
-                await JS.InvokeVoidAsync("mahgoubGeo.bind", _geoBtn, _geoRef);
-            if (_showGeoSheet)
-                await JS.InvokeVoidAsync("mahgoubGeo.bind", _geoSheetBtn, _geoRef);
+            await JS.InvokeVoidAsync("mahgoubGeo.bind", _geoBtn, _geoRef);
         }
         catch
         {
             /* يُعاد الربط في الرسم التالي */
         }
-    }
-
-    private void CloseGeoSheet()
-    {
-        _showGeoSheet = false;
-        _locBusy = false;
-    }
-
-    private void OpenGeoSheet(string kind)
-    {
-        _showGeoSheet = true;
-        _geoSheetHint = kind switch
-        {
-            "denied" => "إن لم تظهر نافذة الهاتف: من إعدادات المتصفح لهذا الموقع اختر الموقع ← السماح، ثم اضغط «السماح بالموقع».",
-            "off" => "فعّل خدمة الموقع من إعدادات الهاتف، ثم اضغط «السماح بالموقع» لتظهر شاشة التشغيل أو الإذن.",
-            "insecure" => "افتح المتجر عبر رابط آمن (https) ثم أعد المحاولة.",
-            "unsupported" => "هذا الجهاز لا يدعم تحديد الموقع من المتصفح.",
-            _ => "اضغط «السماح بالموقع» لتظهر شاشة إذن الهاتف أو تشغيل الموقع."
-        };
     }
 
     [JSInvokable]
@@ -372,20 +326,18 @@ else
         {
             _customerLoc = value;
             _locMsg = "تم تحديد موقعك.";
-            _showGeoSheet = false;
         }
         else
         {
             _customerLoc = null;
             _locMsg = value switch
             {
-                "insecure" => "افتح الموقع عبر الاتصال الآمن (https).",
-                "denied" => "لم يُسمح بالموقع بعد.",
-                "off" => "خدمة الموقع غير مفعّلة.",
+                "insecure" => "افتح المتجر عبر رابط آمن (https).",
+                "denied" => "المتصفح يمنع الموقع لهذا المتجر. من أيقونة القفل بجانب الرابط اختر الموقع ← السماح، ثم أعد الضغط على الزر.",
+                "off" => "فعّل خدمة الموقع من إعدادات الهاتف، ثم أعد الضغط على الزر لتظهر شاشة التشغيل.",
                 "unsupported" => "الموقع غير متاح على هذا الجهاز.",
-                _ => "تعذر تحديد الموقع."
+                _ => "تعذر تحديد الموقع. أعد الضغط على الزر."
             };
-            OpenGeoSheet(value ?? "failed");
         }
 
         return InvokeAsync(StateHasChanged);
@@ -428,7 +380,6 @@ else
         if (_fulfillment == 1 && string.IsNullOrWhiteSpace(_customerLoc))
         {
             _error = "حدد موقعك أولاً.";
-            OpenGeoSheet("failed");
             return;
         }
         if (_paymentId <= 0)

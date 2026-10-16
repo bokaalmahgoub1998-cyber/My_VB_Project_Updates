@@ -5,58 +5,84 @@
     }
 
     /**
-     * مهم: getCurrentPosition يُستدعى فوراً داخل ضغطة المستخدم.
-     * أي انتظار (permissions.query) يلغي إيماءة النظام على iOS/Android فلا تظهر شاشة الإذن.
+     * طلب الموقع يجب أن يبدأ داخل ضغطة المستخدم مباشرة.
+     * أي نداء Blazor أو permissions.query قبل getCurrentPosition
+     * قد يمنع ظهور نافذة النظام على Chrome/Safari في الملف الشخصي العادي.
      */
     function locate(dotnet) {
-        tell(dotnet, "busy");
-        if (!window.isSecureContext) { tell(dotnet, "insecure"); return; }
-        if (!navigator.geolocation) { tell(dotnet, "unsupported"); return; }
+        if (!window.isSecureContext) {
+            if (dotnet) tell(dotnet, "insecure");
+            return;
+        }
+        if (!navigator.geolocation) {
+            if (dotnet) tell(dotnet, "unsupported");
+            return;
+        }
 
         function send(pos) {
             var lat = Number(pos.coords.latitude);
             var lng = Number(pos.coords.longitude);
-            if (!isFinite(lat) || !isFinite(lng)) { tell(dotnet, "failed"); return; }
-            tell(dotnet, "https://maps.google.com/?q=" + lat.toFixed(6) + "," + lng.toFixed(6));
+            if (!isFinite(lat) || !isFinite(lng)) {
+                if (dotnet) tell(dotnet, "failed");
+                return;
+            }
+            if (dotnet)
+                tell(dotnet, "https://maps.google.com/?q=" + lat.toFixed(6) + "," + lng.toFixed(6));
         }
 
         function fail(err) {
+            if (!dotnet) return;
             var code = err && err.code;
             if (code === 1) tell(dotnet, "denied");
             else if (code === 2) tell(dotnet, "off");
             else tell(dotnet, "failed");
         }
 
-        var hi = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
-        var soft = { enableHighAccuracy: false, timeout: 16000, maximumAge: 0 };
+        var opts = { enableHighAccuracy: true, timeout: 25000, maximumAge: 0 };
 
-        navigator.geolocation.getCurrentPosition(send, function (err) {
-            // GPS مطفأ أو مهلة — إعادة طلب بدقة أخرى لتظهر شاشة تشغيل الموقع على أندرويد.
-            if (err && (err.code === 2 || err.code === 3)) {
-                navigator.geolocation.getCurrentPosition(send, fail, soft);
-                return;
-            }
-            fail(err);
-        }, hi);
+        // مهم: أول سطر فعّال بعد التحقق هو getCurrentPosition — داخل نفس إيماءة الضغطة.
+        try {
+            navigator.geolocation.getCurrentPosition(send, function (err) {
+                // موقع مطفأ / مهلة: محاولة ثانية أخف لتظهر شاشة تشغيل الموقع على أندرويد.
+                if (err && (err.code === 2 || err.code === 3)) {
+                    navigator.geolocation.getCurrentPosition(send, fail, {
+                        enableHighAccuracy: false,
+                        timeout: 20000,
+                        maximumAge: 0
+                    });
+                    return;
+                }
+                fail(err);
+            }, opts);
+        } catch (e) {
+            fail({ code: 1 });
+            return;
+        }
+
+        if (dotnet) tell(dotnet, "busy");
     }
 
     function bindButton(btn, dotnet) {
         if (!btn || !dotnet) return;
         if (btn._geoRun) {
             btn.removeEventListener("click", btn._geoRun);
-            btn.removeEventListener("touchend", btn._geoTouch);
+            // إزالة مستمع قديم إن وُجد من نسخة سابقة
+            if (btn._geoTouch)
+                btn.removeEventListener("touchend", btn._geoTouch);
         }
         var lockUntil = 0;
-        function run() {
+        function run(ev) {
+            // نتجاهل النقر الاصطناعي المكرر بعد touch على بعض الأجهزة إن لزم
             var now = Date.now();
             if (now < lockUntil) return;
-            lockUntil = now + 1000;
+            lockUntil = now + 1500;
             locate(dotnet);
         }
         btn._geoRun = run;
-        btn._geoTouch = function () { run(); };
+        btn._geoTouch = null;
+        // click فقط: إيماءة معتمدة لطلب الموقع على أندرويد وآيفون.
+        // touchend + click كانا يطلقان طلبين ويُلغيان نافذة النظام أحياناً في المتصفح العادي.
         btn.addEventListener("click", btn._geoRun);
-        btn.addEventListener("touchend", btn._geoTouch, { passive: true });
     }
 
     window.mahgoubGeo = {
@@ -120,11 +146,6 @@
         if (!el || el.disabled) return;
         window.mahgoubNotify.ask();
     }, true);
-    document.addEventListener("touchend", function (e) {
-        var el = e.target && e.target.closest ? e.target.closest("[data-send-order]") : null;
-        if (!el || el.disabled) return;
-        window.mahgoubNotify.ask();
-    }, { capture: true, passive: true });
 
     window.mahgoubMore = {
         observe: function (el, dotnet) {
