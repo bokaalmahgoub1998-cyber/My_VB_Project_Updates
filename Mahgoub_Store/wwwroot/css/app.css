@@ -220,6 +220,20 @@ button, input, select, textarea {
     object-fit: cover;
 }
 
+.card__media--logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(160deg, #f8fafc 0%, #eef2f6 100%);
+    padding: 18%;
+}
+
+.card__media-logo {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
 .card__body {
     padding: 10px 12px 12px;
 }

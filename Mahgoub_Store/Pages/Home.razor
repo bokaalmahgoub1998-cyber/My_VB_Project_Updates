@@ -54,10 +54,14 @@ else
         @foreach (var item in VisibleItems)
         {
             <article class="card">
-                <div class="card__media">
+                <div class="card__media @(item.HasImage ? null : "card__media--logo")">
                     @if (item.HasImage && !string.IsNullOrWhiteSpace(_slug))
                     {
                         <img src="@Api.ImageUrl(_slug, item.Id, item.ImageRev)" alt="@item.Name" loading="lazy" decoding="async" />
+                    }
+                    else if (!string.IsNullOrWhiteSpace(ItemPlaceholderLogo))
+                    {
+                        <img class="card__media-logo" src="@ItemPlaceholderLogo" alt="" loading="lazy" decoding="async" />
                     }
                 </div>
                 <div class="card__body">
@@ -109,6 +113,11 @@ else
     private CancellationTokenSource? _searchCts;
     private readonly Dictionary<int, int> _qty = new();
     private readonly Dictionary<int, string> _note = new();
+
+    private string? ItemPlaceholderLogo =>
+        Brand.Current is { Available: true, HasLogo: true } && !string.IsNullOrWhiteSpace(_slug)
+            ? Api.LogoUrl(_slug!)
+            : "logo.svg";
 
     private bool UseQuery => _q.Trim().Length > 0 || _cat != 0;
 

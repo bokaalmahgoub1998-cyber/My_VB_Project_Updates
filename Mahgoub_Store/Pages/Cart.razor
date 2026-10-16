@@ -144,7 +144,7 @@ else
                 {
                     <div class="loc-card">
                         <p class="loc-card__msg">لا يمكن إرسال الطلب قبل تحديد موقعك.</p>
-                        <button type="button" class="btn btn--block" @ref="_geoBtn">
+                        <button type="button" class="btn btn--block" @ref="_geoBtn" aria-busy="@_locBusy">
                             @(_locBusy ? "جاري تحديد الموقع…" : "تحديد موقعي الحالي")
                         </button>
                         @if (!string.IsNullOrWhiteSpace(_locMsg))
@@ -331,11 +331,11 @@ else
             _customerLoc = null;
             _locMsg = value switch
             {
-                "insecure" => "افتح الموقع عبر الاتصال الآمن.",
-                "denied" => "الموقع ممنوع. من أيقونة القفل بجانب العنوان اختر الموقع ثم السماح، ثم أعد الضغط.",
-                "off" => "فعّل خدمة الموقع في الهاتف ثم أعد الضغط.",
+                "insecure" => "افتح الموقع عبر الاتصال الآمن (https).",
+                "denied" => "لم يُسمح بالموقع. من إعدادات المتصفح لهذا الموقع اختر الموقع ← السماح، ثم أعد الضغط.",
+                "off" => "فعّل خدمة الموقع في الهاتف ثم أعد الضغط على الزر.",
                 "unsupported" => "الموقع غير متاح على هذا الجهاز.",
-                _ => "تعذر تحديد الموقع."
+                _ => "تعذر تحديد الموقع. أعد الضغط على الزر."
             };
         }
 
