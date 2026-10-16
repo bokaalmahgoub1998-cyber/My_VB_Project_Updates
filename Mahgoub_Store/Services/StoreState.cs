@@ -155,13 +155,19 @@ public sealed class MenuCacheService
         PropertyNameCaseInsensitive = true
     };
 
+    /// <summary>مدة اعتبار القائمة طازجة عند الرجوع داخل الجلسة — بعدها يُحدَّث من الجهاز الرئيسي.</summary>
+    public static readonly TimeSpan FreshFor = TimeSpan.FromSeconds(45);
+
     public MenuCacheService(IJSRuntime js) => _js = js;
 
     public StoreCatalogDto? Catalog { get; private set; }
+    public DateTime CachedAtUtc { get; private set; }
     public bool HasItems => Catalog?.Items.Count > 0;
     public bool IsComplete => Catalog is not null && Catalog.Total > 0 && Catalog.Items.Count >= Catalog.Total;
+    public bool IsFresh => HasItems && DateTime.UtcNow - CachedAtUtc < FreshFor;
 
     private static string Key(string slug) => "mahgoub.catalog." + slug;
+    private static string StampKey(string slug) => "mahgoub.catalog.at." + slug;
 
     public async Task RestoreAsync(string slug)
     {
@@ -173,10 +179,15 @@ public sealed class MenuCacheService
             if (string.IsNullOrWhiteSpace(json))
                 return;
             Catalog = System.Text.Json.JsonSerializer.Deserialize<StoreCatalogDto>(json, Json);
+            string? at = await _js.InvokeAsync<string?>("sessionStorage.getItem", StampKey(slug));
+            CachedAtUtc = DateTime.TryParse(at, null, System.Globalization.DateTimeStyles.RoundtripKind, out var t)
+                ? t.ToUniversalTime()
+                : DateTime.MinValue;
         }
         catch
         {
             Catalog = null;
+            CachedAtUtc = DateTime.MinValue;
         }
     }
 
@@ -187,6 +198,7 @@ public sealed class MenuCacheService
         try
         {
             await _js.InvokeVoidAsync("sessionStorage.setItem", Key(slug), System.Text.Json.JsonSerializer.Serialize(Catalog, Json));
+            await _js.InvokeVoidAsync("sessionStorage.setItem", StampKey(slug), CachedAtUtc.ToString("O"));
         }
         catch
         {
@@ -194,11 +206,17 @@ public sealed class MenuCacheService
         }
     }
 
+    public void Replace(StoreCatalogDto page)
+    {
+        Catalog = page;
+        CachedAtUtc = DateTime.UtcNow;
+    }
+
     public void Merge(StoreCatalogDto page)
     {
         if (Catalog is null || Catalog.Items.Count == 0)
         {
-            Catalog = page;
+            Replace(page);
             return;
         }
 
@@ -206,11 +224,26 @@ public sealed class MenuCacheService
             Catalog.Categories = page.Categories;
         Catalog.Total = page.Total;
         Catalog.DiscountPercent = page.DiscountPercent;
-        var ids = Catalog.Items.Select(i => i.Id).ToHashSet();
+        var map = Catalog.Items.ToDictionary(i => i.Id);
         foreach (var item in page.Items)
         {
-            if (ids.Add(item.Id))
+            if (map.TryGetValue(item.Id, out var old))
+            {
+                old.Name = item.Name;
+                old.CategoryId = item.CategoryId;
+                old.Price = item.Price;
+                old.SalePrice = item.SalePrice;
+                old.DiscountPercent = item.DiscountPercent;
+                old.Unit = item.Unit;
+                old.HasImage = item.HasImage;
+                old.ImageRev = item.ImageRev;
+            }
+            else
+            {
                 Catalog.Items.Add(item);
+                map[item.Id] = item;
+            }
         }
+        CachedAtUtc = DateTime.UtcNow;
     }
 }

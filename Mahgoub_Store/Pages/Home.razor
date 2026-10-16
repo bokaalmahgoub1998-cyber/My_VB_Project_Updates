@@ -57,7 +57,7 @@ else
                 <div class="card__media">
                     @if (item.HasImage && !string.IsNullOrWhiteSpace(_slug))
                     {
-                        <img src="@Api.ImageUrl(_slug, item.Id)" alt="@item.Name" loading="lazy" decoding="async" />
+                        <img src="@Api.ImageUrl(_slug, item.Id, item.ImageRev)" alt="@item.Name" loading="lazy" decoding="async" />
                     }
                 </div>
                 <div class="card__body">
@@ -183,7 +183,14 @@ else
             _catalog = Cache.Catalog;
             _title = string.IsNullOrWhiteSpace(Brand.Current?.Name) ? _title : Brand.Current!.Name;
             _loading = false;
-            _ = ConfirmStoreAsync(fetchPage: false);
+            if (Cache.IsFresh)
+            {
+                _ = ConfirmStoreAsync(fetchPage: false);
+                return;
+            }
+
+            // قائمة قديمة من الجلسة — تُعرض فوراً ثم تُستبدل من الجهاز الرئيسي.
+            _ = SoftRefreshCatalogAsync();
             return;
         }
 
@@ -203,7 +210,7 @@ else
         }
 
         _title = boot.Name;
-        if (fetchPage && !Cache.HasItems && !await LoadPageAsync(0))
+        if (fetchPage && !await LoadPageAsync(0, replace: true))
             _blocked = "المتجر غير متاح حالياً، يرجى الزيارة لاحقاً";
 
         if (_catalog.DiscountPercent > 0 && Brand.Current is { Available: true } live)
@@ -216,11 +223,27 @@ else
         await InvokeAsync(StateHasChanged);
     }
 
+    private async Task SoftRefreshCatalogAsync()
+    {
+        await Api.EnsureSessionAsync(_slug!);
+        var boot = Brand.Current;
+        if (boot is not { Available: true })
+        {
+            _blocked = boot?.Message ?? "هذا المتجر غير متاح حالياً، يرجى الزيارة لاحقاً";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        _title = boot.Name;
+        if (await LoadPageAsync(0, replace: true))
+            await InvokeAsync(StateHasChanged);
+    }
+
     private ElementReference _more;
     private bool _loadingMore;
     private DotNetObjectReference<Home>? _self;
 
-    private async Task<bool> LoadPageAsync(int skip)
+    private async Task<bool> LoadPageAsync(int skip, bool replace = false)
     {
         if (_loadingMore || string.IsNullOrWhiteSpace(_slug))
             return false;
@@ -230,7 +253,10 @@ else
             var page = await Api.CatalogAsync(_slug, skip, 24);
             if (page is null)
                 return false;
-            Cache.Merge(page);
+            if (replace || skip == 0 && !Cache.HasItems)
+                Cache.Replace(page);
+            else
+                Cache.Merge(page);
             _catalog = Cache.Catalog ?? page;
             if (!string.IsNullOrWhiteSpace(_slug))
                 await Cache.PersistAsync(_slug);

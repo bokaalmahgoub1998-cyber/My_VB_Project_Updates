@@ -39,12 +39,15 @@ public sealed class StoreApiClient
         _http.Timeout = TimeSpan.FromSeconds(20);
     }
 
-    public string ImageUrl(string slug, int itemId)
+    public string ImageUrl(string slug, int itemId, long imageRev = 0)
     {
         _ = slug;
+        string path = $"api/webstore/images/{itemId}";
+        if (imageRev > 0)
+            path += "?v=" + imageRev.ToString(System.Globalization.CultureInfo.InvariantCulture);
         if (!IsLocalHost() && !string.IsNullOrWhiteSpace(_slug))
-            return EdgeUrl($"api/webstore/images/{itemId}");
-        return Abs($"api/webstore/images/{itemId}");
+            return EdgeUrl(path);
+        return Abs(path);
     }
 
     public string LogoUrl(string slug)

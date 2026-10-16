@@ -41,6 +41,8 @@ public sealed class StoreItemDto
     public int DiscountPercent { get; set; }
     public string Unit { get; set; } = "قطعة";
     public bool HasImage { get; set; }
+    /// <summary>طابع ملف الصورة — يُلحق برابط الصورة حتى لا تبقى النسخة القديمة في كاش الهاتف.</summary>
+    public long ImageRev { get; set; }
     public decimal EffectivePrice
     {
         get
