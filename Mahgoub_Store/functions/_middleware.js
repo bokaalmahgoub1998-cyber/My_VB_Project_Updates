@@ -1,7 +1,21 @@
+const LOADERIO_TOKEN = "loaderio-5e05aad08ec1aef8efd4f91ad375ed2a";
+
 export async function onRequest(context) {
   const url = new URL(context.request.url);
   if (url.pathname.startsWith("/api/"))
     return context.next();
+
+  // loader.io verification (with or without .txt)
+  const path = url.pathname.replace(/\/+$/, "") || "/";
+  if (path === `/${LOADERIO_TOKEN}` || path === `/${LOADERIO_TOKEN}.txt`) {
+    return new Response(LOADERIO_TOKEN, {
+      status: 200,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store"
+      }
+    });
+  }
 
   try {
     const asset = await context.env.ASSETS.fetch(context.request);
