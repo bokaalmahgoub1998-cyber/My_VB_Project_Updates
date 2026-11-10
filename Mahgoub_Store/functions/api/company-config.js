@@ -18,11 +18,16 @@ export async function onRequest(context) {
     return json(incoming, { message: "طريقة غير مسموحة." }, 405);
   }
 
-  const hmacSecret = (context.env && context.env.COMPANY_CONFIG_HMAC_SECRET) || "";
-  const gateToken = (context.env && context.env.COMPANY_CONFIG_GATE_TOKEN) || "";
-  const dropboxUrl = (context.env && context.env.DROPBOX_SERVER_NAME_URL) || "";
+  const hmacSecret = String((context.env && context.env.COMPANY_CONFIG_HMAC_SECRET) || "").trim();
+  const gateToken = String((context.env && context.env.COMPANY_CONFIG_GATE_TOKEN) || "").trim();
+  const dropboxUrl = String((context.env && context.env.DROPBOX_SERVER_NAME_URL) || "").trim();
   if (!hmacSecret || !gateToken || !dropboxUrl) {
-    return json(incoming, { message: "إعداد الحماية غير مكتمل." }, 503);
+    const missing = [];
+    if (!hmacSecret) missing.push("COMPANY_CONFIG_HMAC_SECRET");
+    if (!gateToken) missing.push("COMPANY_CONFIG_GATE_TOKEN");
+    if (!dropboxUrl) missing.push("DROPBOX_SERVER_NAME_URL");
+    // أسماء الأسرار الناقصة فقط — بلا قيم
+    return json(incoming, { message: "إعداد الحماية غير مكتمل.", missing }, 503);
   }
 
   const gate = incoming.headers.get("X-Mahgoub-Gate") || "";
