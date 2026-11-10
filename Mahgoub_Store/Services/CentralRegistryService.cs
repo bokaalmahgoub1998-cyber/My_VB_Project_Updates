@@ -33,20 +33,33 @@ public sealed class CentralRegistryService
             fromFile = null;
         }
 
-        if (fromFile is null && !IsLocalHost())
-            return Offline(slug);
+        if (IsLocalHost())
+        {
+            string? tunnel = null;
+            if (!string.IsNullOrWhiteSpace(_cfg["DevTunnelUrl"]))
+                tunnel = _cfg["DevTunnelUrl"];
+            if (string.IsNullOrWhiteSpace(tunnel))
+                tunnel = fromFile?.Tunnel;
+            if (string.IsNullOrWhiteSpace(tunnel))
+                return Offline(slug);
 
-        string? tunnel = fromFile?.Tunnel;
-        if (IsLocalHost() && !string.IsNullOrWhiteSpace(_cfg["DevTunnelUrl"]))
-            tunnel = _cfg["DevTunnelUrl"];
-        if (string.IsNullOrWhiteSpace(tunnel))
-            tunnel = fromFile?.Tunnel;
-        if (string.IsNullOrWhiteSpace(tunnel))
-            return Offline(slug);
+            tunnel = tunnel.Trim().TrimEnd('/');
+            if (!tunnel.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                && !tunnel.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+                return Offline(slug);
 
-        tunnel = tunnel.Trim().TrimEnd('/');
-        if (!tunnel.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
-            && !tunnel.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            return new StoreBootstrapDto
+            {
+                Available = true,
+                Slug = slug,
+                Name = "",
+                PrimaryColor = StoreBrandCss.MahgoubNavy,
+                TunnelUrl = tunnel
+            };
+        }
+
+        // Production: edge owns the tunnel. Browser only learns whether the store is enabled.
+        if (fromFile is null || !fromFile.Enabled)
             return Offline(slug);
 
         return new StoreBootstrapDto
@@ -55,7 +68,7 @@ public sealed class CentralRegistryService
             Slug = slug,
             Name = "",
             PrimaryColor = StoreBrandCss.MahgoubNavy,
-            TunnelUrl = tunnel
+            TunnelUrl = null
         };
     }
 
@@ -68,7 +81,16 @@ public sealed class CentralRegistryService
         if (media is not null && media.Contains("html", StringComparison.OrdinalIgnoreCase))
             return null;
 
-        try { return await pages.Content.ReadFromJsonAsync<DropboxStoreRecord>(ct); }
+        try
+        {
+            var rec = await pages.Content.ReadFromJsonAsync<DropboxStoreRecord>(ct);
+            if (rec is null)
+                return null;
+            // Public tenant API returns { slug, enabled } only — never the tunnel.
+            if (!rec.Enabled)
+                return null;
+            return rec;
+        }
         catch { return null; }
     }
 

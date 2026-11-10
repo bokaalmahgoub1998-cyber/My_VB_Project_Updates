@@ -29,14 +29,16 @@ public sealed class TenantHostService
     {
         var uri = new Uri(_nav.Uri);
 
-        if (IsSlug(ReadQuery(uri, "slug"), out var fromQuery))
+        // Real tenant subdomain always wins (blocks ?slug= / path spoofing).
+        if (SubdomainSlug(uri.Host) is { } fromHost)
+            return fromHost;
+
+        // Localhost only: allow ?slug= for convenience while developing.
+        if (IsLoopback(uri.Host) && IsSlug(ReadQuery(uri, "slug"), out var fromQuery))
             return fromQuery;
 
         if (PathSlug(uri) is { } fromPath)
             return fromPath;
-
-        if (SubdomainSlug(uri.Host) is { } fromHost)
-            return fromHost;
 
         if (IsGenericHost(uri.Host) && IsSlug(_cfg["DevSlug"], out var dev))
             return dev;
@@ -95,6 +97,9 @@ public sealed class TenantHostService
         return IsSlug(host[..dot], out var label) ? label : null;
     }
 
+    private static bool IsLoopback(string host) =>
+        host is "localhost" or "127.0.0.1";
+
     private static bool IsGenericHost(string host)
     {
         host = host.ToLowerInvariant();
@@ -119,17 +124,14 @@ public sealed class TenantHostService
         string q = uri.Query.TrimStart('?');
         if (q.Length == 0)
             return null;
-
         foreach (string part in q.Split('&', StringSplitOptions.RemoveEmptyEntries))
         {
             int eq = part.IndexOf('=');
-            if (eq <= 0)
+            string name = eq < 0 ? part : part[..eq];
+            if (!string.Equals(Uri.UnescapeDataString(name), key, StringComparison.OrdinalIgnoreCase))
                 continue;
-            if (!string.Equals(Uri.UnescapeDataString(part[..eq]), key, StringComparison.OrdinalIgnoreCase))
-                continue;
-            return Uri.UnescapeDataString(part[(eq + 1)..]);
+            return eq < 0 ? "" : Uri.UnescapeDataString(part[(eq + 1)..]);
         }
-
         return null;
     }
 }

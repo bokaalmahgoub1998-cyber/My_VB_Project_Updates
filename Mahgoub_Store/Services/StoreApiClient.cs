@@ -57,7 +57,7 @@ public sealed class StoreApiClient
             return _logoOnce;
         _logoOnce = !IsLocalHost() && !string.IsNullOrWhiteSpace(_slug)
             ? EdgeUrl("api/webstore/logo")
-            : $"{_tunnel}/api/webstore/logo";
+            : $"{_tunnel.TrimEnd('/')}/api/webstore/logo";
         return _logoOnce;
     }
 
@@ -71,14 +71,35 @@ public sealed class StoreApiClient
             return _cached;
 
         var resolved = await _registry.ResolveAsync(slug, ct);
-        if (!resolved.Available || string.IsNullOrWhiteSpace(resolved.TunnelUrl))
+        if (!resolved.Available)
         {
             Remember(slug, resolved);
             return resolved;
         }
 
         _slug = slug;
-        _tunnel = resolved.TunnelUrl.TrimEnd('/');
+        if (IsLocalHost())
+        {
+            if (string.IsNullOrWhiteSpace(resolved.TunnelUrl))
+            {
+                var offline = new StoreBootstrapDto
+                {
+                    Available = false,
+                    Slug = slug,
+                    Message = CentralRegistryService.OfflineMessage
+                };
+                Remember(slug, offline);
+                return offline;
+            }
+            _tunnel = resolved.TunnelUrl.TrimEnd('/');
+        }
+        else
+        {
+            // Production: never call the bridge from the browser.
+            _tunnel = "";
+            resolved.TunnelUrl = null;
+        }
+
         await EnsureDevice(ct);
 
         using var pingCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -140,7 +161,10 @@ public sealed class StoreApiClient
         }
 
         resolved.Available = true;
-        resolved.TunnelUrl = _tunnel;
+        if (IsLocalHost())
+            resolved.TunnelUrl = _tunnel;
+        else
+            resolved.TunnelUrl = null;
         Remember(slug, resolved);
         return resolved;
     }
@@ -188,7 +212,7 @@ public sealed class StoreApiClient
 
     public async Task<StoreCatalogDto?> CatalogAsync(string slug, int skip = 0, int take = 24, string? q = null, int cat = 0, CancellationToken ct = default)
     {
-        await EnsureTunnel(slug, ct);
+        await EnsureReady(slug, ct);
         var path = $"api/webstore/catalog?skip={skip}&take={take}";
         if (!string.IsNullOrWhiteSpace(q))
             path += "&q=" + Uri.EscapeDataString(q.Trim());
@@ -212,7 +236,7 @@ public sealed class StoreApiClient
 
     private async Task<List<StorePaymentDto>> LoadPaymentsAsync(string slug, CancellationToken ct)
     {
-        await EnsureTunnel(slug, ct);
+        await EnsureReady(slug, ct);
         using var resp = await DispatchAsync(HttpMethod.Get, "api/webstore/payments", null, ct);
         if (!resp.IsSuccessStatusCode)
             return [];
@@ -221,7 +245,7 @@ public sealed class StoreApiClient
 
     public async Task<(SubmitOrderResult? Ok, string? Error)> SubmitAsync(string slug, SubmitOrderRequest body, CancellationToken ct = default)
     {
-        await EnsureTunnel(slug, ct);
+        await EnsureReady(slug, ct);
         await EnsureDevice(ct);
         body.ClientFingerprint = _device;
         byte[] json = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(body));
@@ -236,7 +260,7 @@ public sealed class StoreApiClient
 
     public async Task<OrderStatusDto?> StatusAsync(string slug, Guid orderId, string token, CancellationToken ct = default)
     {
-        await EnsureTunnel(slug, ct);
+        await EnsureReady(slug, ct);
         using var resp = await DispatchAsync(
             HttpMethod.Get,
             $"api/webstore/orders/{orderId:D}?token={Uri.EscapeDataString(token)}",
@@ -247,9 +271,10 @@ public sealed class StoreApiClient
         return await resp.Content.ReadFromJsonAsync<OrderStatusDto>(Json, ct);
     }
 
-    private async Task EnsureTunnel(string slug, CancellationToken ct)
+    private async Task EnsureReady(string slug, CancellationToken ct)
     {
-        if (!string.IsNullOrWhiteSpace(_tunnel) && string.Equals(_slug, slug, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(_slug, slug, StringComparison.OrdinalIgnoreCase)
+            && (IsLocalHost() ? !string.IsNullOrWhiteSpace(_tunnel) : !string.IsNullOrWhiteSpace(_slug)))
             return;
         await BootstrapAsync(slug, ct);
     }
@@ -265,6 +290,9 @@ public sealed class StoreApiClient
     {
         await EnsureDevice(ct);
         var urls = CandidateUrls(path);
+        if (urls.Count == 0)
+            throw new InvalidOperationException("لا يوجد مسار اتصال بالمتجر.");
+
         HttpResponseMessage? last = null;
         for (int i = 0; i < urls.Count; i++)
         {
@@ -294,10 +322,16 @@ public sealed class StoreApiClient
 
     private List<string> CandidateUrls(string relative)
     {
-        var list = new List<string>(2);
+        var list = new List<string>(1);
         if (!IsLocalHost() && !string.IsNullOrWhiteSpace(_slug))
+        {
+            // Production: edge proxy only — never call the tunnel from the browser.
             list.Add(EdgeUrl(relative));
-        list.Add(Abs(relative));
+            return list;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_tunnel))
+            list.Add(Abs(relative));
         return list;
     }
 

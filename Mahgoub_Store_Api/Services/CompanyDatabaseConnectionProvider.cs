@@ -1,23 +1,20 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Data.SqlClient;
 
 namespace Mahgoub_Store_Api.Services;
 
 /// <summary>
-/// سلسلة اتصال قاعدة الشركة — نفس آلية MauiApp2: ملف Dropbox ثم احتياطي مضمّن.
-/// لا تُعرَّض للمتصفح.
+/// سلسلة اتصال قاعدة الشركة — نفس عقلية MauiApp2 / المتجر:
+/// بوابة Cloudflare <c>/api/company-config</c> بتوقيع Gate+HMAC،
+/// ورابط Dropbox يبقى Secret على Cloudflare فقط.
 /// </summary>
 public sealed class CompanyDatabaseConnectionProvider
 {
-    public const string DefaultDropboxConfigUrl =
-        "https://www.dropbox.com/scl/fi/xweqmc3g0qoirem2p97tq/Mahgoub_server_name.txt?rlkey=gi419f9r9ecyou49ux1jcajq4&dl=1";
-
-    public const string DefaultConnectionString =
-        "Server=ws05.server.ly;Database=Mahgoub_bootDb;" +
-        "User Id=Mahgoub_bootDbUser;Password=#Pt3Uz9mi!Fco5gm;" +
-        "Connect Timeout=10;TrustServerCertificate=True;";
+    public const string DefaultCompanyConfigGatewayUrl = "https://mahgoubonline.com/api/company-config";
 
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private string _cached = DefaultConnectionString;
+    private string _cached = "";
     private DateTime _lastRefreshUtc = DateTime.MinValue;
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(20);
 
@@ -25,7 +22,7 @@ public sealed class CompanyDatabaseConnectionProvider
 
     public async Task<string> GetConnectionStringAsync(CancellationToken ct = default)
     {
-        if (DateTime.UtcNow - _lastRefreshUtc < CacheTtl)
+        if (!string.IsNullOrWhiteSpace(_cached) && DateTime.UtcNow - _lastRefreshUtc < CacheTtl)
             return _cached;
 
         await RefreshAsync(ct).ConfigureAwait(false);
@@ -38,7 +35,8 @@ public sealed class CompanyDatabaseConnectionProvider
         try
         {
             string? remote = await TryFetchAndParseAsync(ct).ConfigureAwait(false);
-            _cached = string.IsNullOrWhiteSpace(remote) ? DefaultConnectionString : remote;
+            if (!string.IsNullOrWhiteSpace(remote))
+                _cached = remote;
             _lastRefreshUtc = DateTime.UtcNow;
         }
         finally
@@ -49,16 +47,42 @@ public sealed class CompanyDatabaseConnectionProvider
 
     private static async Task<string?> TryFetchAndParseAsync(CancellationToken ct)
     {
-        string url = Environment.GetEnvironmentVariable("MAHGOUB_COMPANY_DB_CONFIG_URL") ?? string.Empty;
+        string url = (Environment.GetEnvironmentVariable("MAHGOUB_COMPANY_DB_CONFIG_URL") ?? "").Trim();
         if (string.IsNullOrWhiteSpace(url))
-            url = DefaultDropboxConfigUrl;
+            url = DefaultCompanyConfigGatewayUrl;
 
-        url = NormalizeDropboxDirectUrl(url.Trim());
+        string hmac = (Environment.GetEnvironmentVariable("MAHGOUB_COMPANY_CONFIG_HMAC")
+                       ?? Environment.GetEnvironmentVariable("COMPANY_CONFIG_HMAC_SECRET")
+                       ?? "").Trim();
+        string gate = (Environment.GetEnvironmentVariable("MAHGOUB_COMPANY_CONFIG_GATE")
+                       ?? Environment.GetEnvironmentVariable("COMPANY_CONFIG_GATE_TOKEN")
+                       ?? "").Trim();
+
+        bool viaGateway = IsCompanyConfigGatewayUrl(url);
+        if (!viaGateway)
+            url = NormalizeDropboxDirectUrl(url);
 
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-            using var resp = await http.GetAsync(url, ct).ConfigureAwait(false);
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            if (viaGateway)
+            {
+                if (hmac.Length < 16 || gate.Length < 16)
+                    return null;
+
+                var uri = new Uri(url);
+                string pathQ = uri.PathAndQuery;
+                string ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+                string nonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+                string sign = ComputeHmac(hmac, "GET", pathQ, ts, nonce, Array.Empty<byte>());
+                req.Headers.TryAddWithoutValidation("X-Mahgoub-Gate", gate);
+                req.Headers.TryAddWithoutValidation("X-Mahgoub-Ts", ts);
+                req.Headers.TryAddWithoutValidation("X-Mahgoub-Nonce", nonce);
+                req.Headers.TryAddWithoutValidation("X-Mahgoub-Sign", sign);
+            }
+
+            using var resp = await http.SendAsync(req, ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
                 return null;
 
@@ -69,6 +93,14 @@ public sealed class CompanyDatabaseConnectionProvider
         {
             return null;
         }
+    }
+
+    internal static bool IsCompanyConfigGatewayUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var u))
+            return false;
+        string path = (u.AbsolutePath ?? "").TrimEnd('/');
+        return path.Equals("/api/company-config", StringComparison.OrdinalIgnoreCase);
     }
 
     internal static string NormalizeDropboxDirectUrl(string url)
@@ -83,6 +115,14 @@ public sealed class CompanyDatabaseConnectionProvider
             url += url.Contains('?') ? "&dl=1" : "?dl=1";
 
         return url;
+    }
+
+    internal static string ComputeHmac(string secret, string method, string pathAndQuery, string unixSeconds, string nonce, byte[] body)
+    {
+        string bodyHash = Convert.ToHexString(SHA256.HashData(body ?? [])).ToLowerInvariant();
+        string msg = $"{unixSeconds}\n{nonce}\n{method.Trim().ToUpperInvariant()}\n{pathAndQuery}\n{bodyHash}";
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes((secret ?? "").Trim()));
+        return Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(msg))).ToLowerInvariant();
     }
 
     internal static string? ParseConfigText(string? raw)
@@ -110,7 +150,9 @@ public sealed class CompanyDatabaseConnectionProvider
             if (eq <= 0)
                 continue;
 
-            ApplyKeyValue(sb, t[..eq].Trim(), t[(eq + 1)..].Trim().Trim('"'));
+            string key = t[..eq].Trim();
+            string val = t[(eq + 1)..].Trim().Trim('"');
+            ApplyKeyValue(sb, key, val);
         }
 
         if (string.IsNullOrWhiteSpace(sb.DataSource) || string.IsNullOrWhiteSpace(sb.InitialCatalog))
@@ -136,7 +178,7 @@ public sealed class CompanyDatabaseConnectionProvider
         }
 
         try { sb[key] = val; }
-        catch { /* مفتاح غير معروف */ }
+        catch { /* ignore */ }
     }
 
     private static string NormalizeConnectionString(string cs)

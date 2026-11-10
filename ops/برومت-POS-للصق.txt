@@ -1,0 +1,97 @@
+================================================================================
+انسخ كل ما بين السطرين =====PROMPT===== إلى محادثة مشروع MauiApp2 (POS)
+================================================================================
+
+=====PROMPT=====
+You are working in the Mahgoub POS / Maui project at:
+C:\Users\Boka\source\repos\MauiApp2
+
+Goal: implement professional inbound security for ALL /api/webstore/* endpoints so they accept ONLY traffic signed by Cloudflare Pages edge proxy, and REJECT direct unsigned tunnel calls.
+
+## Secrets (already created — DO NOT print them in chat or commit them)
+
+Read these local files for the exact values (trim whitespace/newlines):
+- C:\Users\Boka\source\repos\MauiApp2\WEBSTORE_GATE_TOKEN.txt
+- C:\Users\Boka\source\repos\MauiApp2\WEBSTORE_HMAC_SECRET.txt
+
+These MUST match Cloudflare Pages Production secrets on project mahgoub-store:
+- WEBSTORE_GATE_TOKEN
+- WEBSTORE_HMAC_SECRET
+
+Add both .txt files to .gitignore immediately if not already ignored. Prefer loading from secure config / user secrets / env in production builds; the txt files are for local alignment only.
+
+## What Cloudflare sends on every proxied request to {tunnel}/api/webstore/...
+
+Headers:
+- X-Mahgoub-Gate: exact WEBSTORE_GATE_TOKEN
+- X-Mahgoub-Ts: unix seconds (string)
+- X-Mahgoub-Nonce: random id
+- X-Mahgoub-Sign: HMAC-SHA256 hex lowercase
+- X-Mahgoub-Slug: tenant slug
+- X-Mahgoub-Device: optional
+- Origin: https://mahgoubonline.com
+- CF-Connecting-IP: when present
+
+## Exact HMAC (must match store edge Function)
+
+Key = WEBSTORE_HMAC_SECRET (UTF-8 bytes of the secret string).
+
+Message:
+{ts}\n{nonce}\n{METHOD}\n{pathAndQuery}\n{bodySha256Hex}
+
+- METHOD uppercase (GET/POST)
+- pathAndQuery e.g. /api/webstore/ping or /api/webstore/orders/{guid}?token=...
+- bodySha256Hex = lowercase hex SHA-256 of raw request body; empty body = hash of empty bytes
+- Sign = lowercase hex HMAC-SHA256(key, message UTF-8)
+- Compare signatures with fixed-time equals
+- Reject if |DateTimeOffset.UtcNow.ToUnixTimeSeconds() - Ts| > 300 (5 minutes)
+
+Reference edge implementation (read-only alignment):
+C:\Users\Boka\source\repos\Mahgoub_Store\Mahgoub_Store\functions\api\pos\[slug]\[[path]].js
+
+## Required behavior for ALL /api/webstore/*
+
+Reject 401/403 when:
+1. Gate missing or != WEBSTORE_GATE_TOKEN
+2. Ts / Nonce / Sign missing
+3. Clock skew > 5 minutes
+4. HMAC mismatch
+5. Optional: reject reused Nonce
+
+Production MUST NOT allow unsigned requests. If you keep a Dev bypass, it must be explicit and OFF by default / OFF in Release.
+
+## Paths Cloudflare allowlists (others blocked at edge anyway)
+
+GET  ping, branding, catalog, payments, logo, images/{int}, orders/{guid}
+POST orders
+
+## Business checks (defense in depth)
+
+On POST orders:
+- Price only from POS DB (client never trusted for price)
+- Validate PaymentId
+- Clamp Qty (max 99)
+- If Location present: allow only trusted Google Maps URL forms
+- Item must be available / web_show as applicable
+- Status token: long random + short expiry; status endpoint requires token
+
+Optional: refuse images for non-web_show items.
+
+## Acceptance tests
+
+A) GET https://{tunnel}/api/webstore/ping  (no headers) → 401/403
+B) GET https://{tenant}.mahgoubonline.com/api/pos/{slug}/ping → 200 (after store hardened deploy + secrets)
+C) Wrong Gate or wrong Sign → 401/403
+D) Real storefront order still works end-to-end
+
+## Deliverables
+
+1. Middleware/filter covering entire /api/webstore pipeline
+2. Config wiring for Gate + HMAC secret (and gitignore for the .txt files)
+3. Brief note of files changed + how operator sets secrets on the POS machine
+4. Do NOT echo secret values in the reply
+=====PROMPT=====
+
+================================================================================
+نهاية ملف البرومت
+================================================================================

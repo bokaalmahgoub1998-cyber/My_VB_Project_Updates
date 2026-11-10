@@ -382,9 +382,20 @@ else
             _error = "حدد موقعك أولاً.";
             return;
         }
-        if (_paymentId <= 0)
+        if (_fulfillment == 1 && !StoreMapLink.IsAllowedMapUrl(_customerLoc))
+        {
+            _error = "موقع التوصيل غير صالح. أعد تحديد موقعك من الزر.";
+            _customerLoc = null;
+            return;
+        }
+        if (_paymentId <= 0 || _payments.All(p => p.Id != _paymentId))
         {
             _error = "اختر طريقة الدفع.";
+            return;
+        }
+        if (Bag.Lines.Any(l => l.Qty < 1 || l.Qty > 99))
+        {
+            _error = "كمية غير صالحة في السلة.";
             return;
         }
 
@@ -397,7 +408,7 @@ else
             {
                 CustomerName = StoreSafeText.PersonName(_name),
                 Phone = _phone.Trim(),
-                Fulfillment = _fulfillment,
+                Fulfillment = _fulfillment is 0 or 1 ? _fulfillment : 0,
                 Address = _fulfillment == 1 ? StoreSafeText.Address(_addressText) : null,
                 Location = _fulfillment == 1 ? _customerLoc : null,
                 OrderNote = StoreSafeText.Note(_orderNote),
@@ -405,7 +416,7 @@ else
                 Lines = Bag.Lines.Select(l => new SubmitOrderLine
                 {
                     ItemId = l.ItemId,
-                    Qty = l.Qty,
+                    Qty = Math.Clamp(l.Qty, 1, 99),
                     Note = StoreSafeText.ItemNote(l.Note)
                 }).ToList()
             };

@@ -1,0 +1,30 @@
+POS / bridge — reject unsigned webstore traffic (manual / POS repo)
+==================================================================
+
+Edge Function signs every proxied call with:
+  X-Mahgoub-Ts
+  X-Mahgoub-Nonce
+  X-Mahgoub-Sign
+  X-Mahgoub-Gate   (from WEBSTORE_GATE_TOKEN)
+
+Message for HMAC-SHA256 (hex lowercase), key = WEBSTORE_HMAC_SECRET:
+  {ts}\n{nonce}\n{METHOD}\n{pathAndQuery}\n{sha256hex(body)}
+
+pathAndQuery example: /api/webstore/ping
+body hash for empty body = SHA-256 of empty bytes.
+
+Required POS behavior for ALL /api/webstore/* :
+1. Reject if Gate header missing or != configured gate token → 401/403
+2. Reject if Ts/Nonce/Sign missing → 401/403
+3. Reject if |now - Ts| > 5 minutes → 401
+4. Reject if Sign != recomputed HMAC → 401
+5. Optional: reject replayed Nonce
+
+Manual tests:
+  A) curl https://{tunnel}/api/webstore/ping
+     → must FAIL (401/403)
+  B) curl https://{tenant}.mahgoubonline.com/api/pos/{slug}/ping
+     → must succeed (200) when Cloudflare secrets match POS
+
+Align secret with Cloudflare WEBSTORE_HMAC_SECRET (not productKey)
+unless you intentionally configure POS to use the same value as productKey.

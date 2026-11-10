@@ -1,0 +1,88 @@
+Mahgoub Store — Cloudflare security setup (manual)
+==================================================
+
+Do this BEFORE or immediately AFTER deploying the hardened Functions.
+Without these secrets, /api/pos and /api/tenant will return 503.
+
+B-1) Pages project secrets
+--------------------------
+Cloudflare Dashboard → Workers & Pages → project "mahgoub-store"
+→ Settings → Environment variables → Production (and Preview if used)
+
+Add as Encrypted/Secret:
+
+  DROPBOX_STORE_DATA_URL
+    Value: your Dropbox direct-download URL for Mahgoub_store_data.txt
+    (use dl=1). Same file as before; do NOT commit this URL to Git.
+    Previous URL that was in source (rotate after deploy — see B-2):
+    https://www.dropbox.com/scl/fi/5rccqzhezx15nviq5zoyf/Mahgoub_store_data.txt?rlkey=7v930ywv3umwbnrvyhpn1p50k&dl=1
+
+  WEBSTORE_HMAC_SECRET
+    Strong random string. Must match what the POS verifies for
+    X-Mahgoub-Sign (same secret the edge uses to sign).
+
+  WEBSTORE_GATE_TOKEN
+    Strong random string. POS must require header X-Mahgoub-Gate
+    with this exact value.
+
+  DROPBOX_SERVER_NAME_URL
+    Dropbox direct-download URL for Mahgoub_server_name.txt (dl=1).
+    Used ONLY by Edge Function GET /api/company-config.
+    Clients (Windows / PWA / Android / iOS / branches) never see this URL.
+    Values for a fresh seal are written locally to:
+      ops/company-config-secrets.LOCAL.txt  (gitignored)
+
+  COMPANY_CONFIG_HMAC_SECRET
+    Must match the HMAC sealed into MauiApp2 company-activation.sealed.json
+    (and MAHGOUB_COMPANY_CONFIG_HMAC for Mahgoub_Store_Api if used).
+
+  COMPANY_CONFIG_GATE_TOKEN
+    Must match the Gate sealed into company-activation.sealed.json
+    (and MAHGOUB_COMPANY_CONFIG_GATE for Store_Api if used).
+
+Generate (PowerShell):
+  [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Maximum 256 }) -as [byte[]])
+
+Then: Redeploy the Pages project so Functions reload env.
+
+B-2) Rotate Dropbox share (after code deploy that removed the hardcoded URL)
+---------------------------------------------------------------------------
+1. In Dropbox, revoke the old share link / create a new share link.
+2. Update DROPBOX_STORE_DATA_URL secret to the new URL (dl=1).
+3. Redeploy or wait for next deploy; confirm /api/tenant/{slug} returns enabled.
+
+B-4) Rate limiting (recommended)
+--------------------------------
+Cloudflare → Security → WAF → Rate limiting rules (or Security Rules)
+
+Rule 1 — orders (strict):
+  If URI Path matches /api/pos/*/orders  (or contains /api/pos/ and ends with /orders)
+  Method POST
+  Limit: e.g. 10 requests / 1 minute / IP
+  Action: Block
+
+Rule 2 — API ceiling:
+  If URI Path starts with /api/pos/
+  Limit: e.g. 120 requests / 1 minute / IP
+  Action: Block or Managed Challenge
+
+Rule 3 — company config:
+  If URI Path equals /api/company-config
+  Limit: e.g. 30 requests / 1 minute / IP
+  Action: Block or Managed Challenge
+
+B-3) POS unsigned rejection
+---------------------------
+See ops/pos-hmac-gate-checklist.txt
+
+B-5) Company DB config gateway (Mahgoub_server_name)
+---------------------------------------------------
+Flow (same security mentality as the storefront):
+  Device → HTTPS GET https://mahgoubonline.com/api/company-config
+       with X-Mahgoub-Gate / Ts / Nonce / Sign
+    → Cloudflare verifies Gate+HMAC
+    → Cloudflare fetches DROPBOX_SERVER_NAME_URL server-side
+    → returns connection text only (never the Dropbox URL)
+
+Unsigned GET to /api/company-config must return 401.
+Direct Dropbox URL must not appear in MauiApp2 / Store_Api source.

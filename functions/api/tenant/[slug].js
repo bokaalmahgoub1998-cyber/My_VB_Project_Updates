@@ -2,9 +2,9 @@ export async function onRequestGet(context) {
   const slug = String(context.params.slug || "").trim().toLowerCase();
   if (!slug) return json({ slug, enabled: false }, 400);
 
-  const dropboxUrl =
-    (context.env && context.env.DROPBOX_STORE_DATA_URL) ||
-    DEFAULT_STORE_DATA_URL;
+  const dropboxUrl = context.env && context.env.DROPBOX_STORE_DATA_URL;
+  if (!dropboxUrl)
+    return json({ slug, enabled: false, message: "إعداد السجل غير مكتمل." }, 503);
 
   try {
     const resp = await fetch(withDirectDownload(dropboxUrl), { redirect: "follow" });
@@ -13,14 +13,12 @@ export async function onRequestGet(context) {
     if (looksLikeSqlConnection(text)) return json({ slug, enabled: false }, 404);
     const rec = findStore(text, slug);
     if (!rec) return json({ slug, enabled: false }, 404);
-    return json(publicStore(rec));
+    // Never expose tunnel/bridge URL to the browser.
+    return json({ slug: rec.slug, enabled: true });
   } catch {
     return json({ slug, enabled: false }, 503);
   }
 }
-
-const DEFAULT_STORE_DATA_URL =
-  "https://www.dropbox.com/scl/fi/5rccqzhezx15nviq5zoyf/Mahgoub_store_data.txt?rlkey=7v930ywv3umwbnrvyhpn1p50k&dl=1";
 
 function json(body, status) {
   return new Response(JSON.stringify(body), {
@@ -41,14 +39,6 @@ function looksLikeSqlConnection(raw) {
   return first ? /^(server\s*=|data source\s*=)/i.test(first) : false;
 }
 
-function publicStore(rec) {
-  return {
-    slug: rec.slug,
-    tunnel: rec.tunnel || "",
-    enabled: true
-  };
-}
-
 function findStore(raw, slug) {
   const lines = String(raw || "").replace(/\r/g, "\n").split("\n");
   for (const line of lines) {
@@ -59,10 +49,8 @@ function findStore(raw, slug) {
       try {
         const data = JSON.parse(t.slice(i));
         const hit = (data.stores || []).find((s) => String(s.slug || "").toLowerCase() === slug);
-        if (hit) {
-          return { slug, tunnel: hit.tunnel || "" };
-        }
-      } catch { /* تجاهل JSON غير صالح */ }
+        if (hit) return { slug, tunnel: hit.tunnel || "" };
+      } catch { /* ignore bad JSON */ }
     }
     if (t.toLowerCase().startsWith("store.") && t.includes("=")) {
       const eq = t.indexOf("=");
