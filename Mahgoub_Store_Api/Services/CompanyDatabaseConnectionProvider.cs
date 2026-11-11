@@ -11,7 +11,7 @@ namespace Mahgoub_Store_Api.Services;
 /// </summary>
 public sealed class CompanyDatabaseConnectionProvider
 {
-    public const string DefaultCompanyConfigGatewayUrl = "https://mahgoubonline.com/api/company-config";
+    public const string DefaultCompanyConfigGatewayUrl = "https://mahgoub-store.pages.dev/api/company-config";
 
     private readonly SemaphoreSlim _gate = new(1, 1);
     private string _cached = "";
@@ -58,19 +58,26 @@ public sealed class CompanyDatabaseConnectionProvider
                        ?? Environment.GetEnvironmentVariable("COMPANY_CONFIG_GATE_TOKEN")
                        ?? "").Trim();
 
-        bool viaGateway = IsCompanyConfigGatewayUrl(url);
-        if (!viaGateway)
+        // مثل المتجر: بوابة Cloudflare فقط. Dropbox المباشر مرفوض إلا بعلم تشخيصي.
+        if (!IsCompanyConfigGatewayUrl(url))
+        {
+            string? allow = Environment.GetEnvironmentVariable("MAHGOUB_ALLOW_DIRECT_DROPBOX");
+            bool ok = allow is "1" or "true" or "TRUE" or "yes" or "YES" or "on" or "ON";
+            if (!ok)
+                return null;
             url = NormalizeDropboxDirectUrl(url);
+        }
+        else if (hmac.Length < 16 || gate.Length < 16)
+        {
+            return null;
+        }
 
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
-            if (viaGateway)
+            if (IsCompanyConfigGatewayUrl(url))
             {
-                if (hmac.Length < 16 || gate.Length < 16)
-                    return null;
-
                 var uri = new Uri(url);
                 string pathQ = uri.PathAndQuery;
                 string ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();

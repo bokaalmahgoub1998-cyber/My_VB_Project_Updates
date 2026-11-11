@@ -8,6 +8,9 @@
  *   COMPANY_CONFIG_HMAC_SECRET
  *   COMPANY_CONFIG_GATE_TOKEN
  */
+const usedNonces = new Map(); // nonce -> expiresAtMs
+const NONCE_TTL_MS = 5 * 60 * 1000;
+
 export async function onRequest(context) {
   const incoming = context.request;
   if (incoming.method === "OPTIONS") {
@@ -45,6 +48,10 @@ export async function onRequest(context) {
   const unix = Number(ts);
   if (!Number.isFinite(unix) || Math.abs(Date.now() / 1000 - unix) > 300) {
     return json(incoming, { message: "انتهت صلاحية التوقيع." }, 401);
+  }
+
+  if (!rememberNonce(nonce)) {
+    return json(incoming, { message: "طلب مكرر مرفوض." }, 401);
   }
 
   const url = new URL(incoming.url);
@@ -176,4 +183,16 @@ async function timingSafeEqual(a, b) {
   let diff = 0;
   for (let i = 0; i < left.length; i++) diff |= left[i] ^ right[i];
   return diff === 0;
+}
+
+function rememberNonce(nonce) {
+  const key = String(nonce || "").trim().toLowerCase();
+  if (!key || key.length < 8) return false;
+  const now = Date.now();
+  for (const [n, exp] of usedNonces) {
+    if (exp <= now) usedNonces.delete(n);
+  }
+  if (usedNonces.has(key)) return false;
+  usedNonces.set(key, now + NONCE_TTL_MS);
+  return true;
 }
